@@ -1,6 +1,6 @@
 # Vertical Evacuation Tsunami Evacuation Model
 
-This is an agent based modeling of vertical evacuation for the city of Seaside, OR.
+This repo includes the agent based model of the Tsunami evacuation for the city of Seaside, OR. This model is capable of simulating both horizontal and vertical evacuation as well as both pedestrians and vehicles.
 
 ## Getting Started
 
