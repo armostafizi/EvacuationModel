@@ -45,6 +45,21 @@ Agents walk towards the transportation netwrok, depending on their preparation/m
 ![Alt text](snapshot_1.png?raw=true "Snapshot 1 - time = 6min")
 ![Alt text](snapshot_2.png?raw=true "Snapshot 2 - time = 44min")
 
+## Funding and Support
+
+This project is partially supported by [Oregon Sea Grant](http://seagrant.oregonstate.edu/) and National Science Foundation [Award \#1563618](https://www.nsf.gov/awardsearch/showAward?AWD_ID=1563618). This work has been implemented under direct supercision of [Dr. Haizhong Wang](http://cce.oregonstate.edu/wang), [Dr. Dan Cox](http://cce.oregonstate.edu/cox), and [Dr. Lori A. Cramer](https://liberalarts.oregonstate.edu/spp/sociology/lori-cramer) at [Oregon State Unievrsity](http://oregonstate.edu).
+
+## Publications
+
+Please use the following citations in case of refering to this work:
+
+Wang, H., Mostafizi, A., Cramer, L. A., Cox, D., & Park, H. (2016). An agent-based model of a multimodal near-field tsunami evacuation: decision-making and life safety. Transportation Research Part C: Emerging Technologies, 64, 86-100.
+
+Mostafizi, A. (2016). Agent-based tsunami evacuation model: life safety and network resilience.
+
+Mostafizi, A., Wang, H., Cox, D., Cramer, L. A., & Dong, S. (2017). Agent-based tsunami evacuation modeling of unplanned network disruptions for evidence-driven resource allocation and retrofitting strategies. Natural Hazards, 88(3), 1347-1372.
+
+
 ## Authors
 
 * **Alireza Mostafizi** - [armostafizi](https://github.com/armostafizi)
