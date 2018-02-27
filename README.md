@@ -4,26 +4,26 @@ This is an agent based modeling of vertical evacuation for the city of Seaside, 
 
 ## Getting Started
 
-Clone this repo and open the .nlogo file with Netlogo 5.1.0. Do not attempt opening/translating this script to Netlogo 6. Some functionalities may be lost.
+Clone this repo and open the .nlogo file with NetLogo 5.1.0. Do not attempt opening/translating this script to NetLogo 6. Some functionalities may be lost.
 
 ### Prerequisites
 
-You must have Netlogo 5.1.0.
+You must have NetLogo 5.1.0.
 
 ### Instructions
 
 Here is a brief instruction on how to run the model:
 
 1. Set the parameters on the left panel:
-  immediate evacuation: if on, people start the evacuation right away. If not, they start with a delay, coming from a Rayleigh distribution. The detailed explanation is documented [here](https://ir.library.oregonstate.edu/concern/graduate_thesis_or_dissertations/bv73c493x) and [here](https://www.sciencedirect.com/science/article/pii/S0968090X15004106).
+  Immediate evacuation: if on, people start the evacuation right away. If not, they start with a delay, coming from a Rayleigh distribution. The detailed explanation is documented [here](https://ir.library.oregonstate.edu/concern/graduate_thesis_or_dissertations/bv73c493x) and [here](https://www.sciencedirect.com/science/article/pii/S0968090X15004106).
 
   Tsunami-case: the return interval of the tsunami. 2500-year return interval is the most intensive tsunami model used with this model.
 
   R(1/2/3/4)-(Ver/Hor)Evac-(Car/Foot): the percentages of different evacuation mode categories. These should add up to 100. Evacuees can evacuate either by foot or by car to either a horizontal or a vertical evacuation shelter.
 
-  Hc: critical inundation depth, used for estimating casualties. Normally 0.5m is suggested. This can relate to the resiliecncy of the population towards the inundation force. 
+  Hc: critical inundation depth, used for estimating casualties. Normally 0.5m is suggested. This can relate to the resiliency of the population towards the inundation force. 
 
-  Ped-speed, ped-sigma: the normal distribution parameters, used for random drawing of the walking speed of the evacuees. Normally walking speed ranges from 3 to 5 ft/s depending on dempgraphic and physical charactersistics of the evacuee.
+  Ped-speed, ped-sigma: the normal distribution parameters, used for random drawing of the walking speed of the evacuees. Normally walking speed ranges from 3 to 5 ft/s depending on demographic and physical characteristics of the evacuee.
 
   Max-speed, acceleration, deceleration, and alpha: Driving and car-following model parameters. Recommend values are 35, 5, 25, and 0.14 respectively. For detailed explanation on the car-following behavior, please refer [this](https://ir.library.oregonstate.edu/concern/graduate_thesis_or_dissertations/bv73c493x) and [this](https://link.springer.com/article/10.1007/s11069-017-2927-y).
 
@@ -38,7 +38,7 @@ Here is a brief instruction on how to run the model:
 
 5. "GO"
 
-Agents walk towards the transportation netwrok, depending on their preparation/milling time and their walking speed. Afterwards, they switch colors based on their decisions. Blue for the horizontal evac by car, purple for vertical evac by car, orange for horizontal evac by foot, and brown for vertical evac by foot. Refere to [this](https://ir.library.oregonstate.edu/concern/graduate_thesis_or_dissertations/bv73c493x), [this](https://link.springer.com/article/10.1007/s11069-017-2927-y), and [this](https://www.sciencedirect.com/science/article/pii/S0968090X15004106) for thorough discussion on the simulated evaucation process. 
+Agents walk towards the transportation netwrok, depending on their preparation/milling time and their walking speed. Afterwards, they switch colors based on their decisions. Blue for the horizontal evacuation by car, purple for vertical evacuation by car, orange for horizontal evacuation by foot, and brown for vertical evacuation by foot. Refer to [this](https://ir.library.oregonstate.edu/concern/graduate_thesis_or_dissertations/bv73c493x), [this](https://link.springer.com/article/10.1007/s11069-017-2927-y), and [this](https://www.sciencedirect.com/science/article/pii/S0968090X15004106) for thorough discussion on the simulated evacuation process. 
 
 ## Snapshots
 
@@ -47,11 +47,11 @@ Agents walk towards the transportation netwrok, depending on their preparation/m
 
 ## Funding and Support
 
-This project is partially supported by [Oregon Sea Grant](http://seagrant.oregonstate.edu/) and National Science Foundation [Award \#1563618](https://www.nsf.gov/awardsearch/showAward?AWD_ID=1563618). This work has been implemented under direct supercision of [Dr. Haizhong Wang](http://cce.oregonstate.edu/wang), [Dr. Dan Cox](http://cce.oregonstate.edu/cox), and [Dr. Lori A. Cramer](https://liberalarts.oregonstate.edu/spp/sociology/lori-cramer) at [Oregon State Unievrsity](http://oregonstate.edu).
+This project is partially supported by [Oregon Sea Grant](http://seagrant.oregonstate.edu/) and National Science Foundation [Award \#1563618](https://www.nsf.gov/awardsearch/showAward?AWD_ID=1563618). This work has been implemented under direct supervision of [Dr. Haizhong Wang](http://cce.oregonstate.edu/wang), [Dr. Dan Cox](http://cce.oregonstate.edu/cox), and [Dr. Lori A. Cramer](https://liberalarts.oregonstate.edu/spp/sociology/lori-cramer) at [Oregon State University](http://oregonstate.edu).
 
 ## Publications
 
-Please use the following citations in case of refering to this work:
+Please use the following citations in case of referring to this work:
 
 Wang, H., Mostafizi, A., Cramer, L. A., Cox, D., & Park, H. (2016). An agent-based model of a multimodal near-field tsunami evacuation: decision-making and life safety. Transportation Research Part C: Emerging Technologies, 64, 86-100.
 
