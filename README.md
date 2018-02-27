@@ -20,7 +20,7 @@ Here is a brief instruction on how to run the model:
 
 * Tsunami-case: the return interval of the tsunami. 2500-year return interval is the most intensive tsunami model used with this model.
 
-* R(1/2/3/4)-(Ver/Hor)Evac-(Car/Foot): the percentages of different evacuation mode categories. These should add up to 100. Evacuees can evacuate either by foot or by car to either a horizontal or a vertical evacuation shelter.
+* R(1/2/3/4)-(Ver/Hor)Evac-(Car/Foot): the percentages of different evacuation mode categories. These should add up to 100. Evacuees can evacuate either by foot or by car to either a horizontal or a vertical evacuation shelter. You can set the vertical evacuation percentages (R3 and R4) to zero if you do not inted to consider it.
 
 * Hc: critical inundation depth, used for estimating the number of casualties. Normally 0.5m is suggested. This can relate to the resiliency of the population towards the inundation force. 
 
@@ -34,7 +34,7 @@ Here is a brief instruction on how to run the model:
 * You MUST click on this, and reload the model every time you change the parameters on the left panel. Otherwise your changes won't go into effect.
 
 3. Click on "Place Verticals"
-* Use your mouse and click on the intersections you want the vertical evacuation shelters to be placed, and then click on the button one more time to turn it off.
+* Use your mouse and click on the intersections you want the vertical evacuation shelters to be placed, and then click on the button one more time to turn it off. You can skip this step if you do not intend to model vertical evacuation. If so, please make sure that R3 and R4 percentages are set to zero.
 
 4. Click on "Read(2/2)"
 
