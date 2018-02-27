@@ -22,7 +22,7 @@ Here is a brief instruction on how to run the model:
 
 * R(1/2/3/4)-(Ver/Hor)Evac-(Car/Foot): the percentages of different evacuation mode categories. These should add up to 100. Evacuees can evacuate either by foot or by car to either a horizontal or a vertical evacuation shelter.
 
-* Hc: critical inundation depth, used for estimating casualties. Normally 0.5m is suggested. This can relate to the resiliency of the population towards the inundation force. 
+* Hc: critical inundation depth, used for estimating the number of casualties. Normally 0.5m is suggested. This can relate to the resiliency of the population towards the inundation force. 
 
 * Ped-speed, ped-sigma: the normal distribution parameters, used for random drawing of the walking speed of the evacuees. Normally walking speed ranges from 3 to 5 ft/s depending on demographic and physical characteristics of the evacuee.
 
