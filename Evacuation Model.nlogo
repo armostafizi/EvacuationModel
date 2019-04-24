@@ -47,8 +47,6 @@ intersections-own [
    gscore
    ver-path
    hor-path
-   ;ped-path
-   ;car-path
    speed
    ]
 
@@ -59,7 +57,6 @@ pedestrians-own [
   goal
   destination
   moving?
-  ;rd
   evacuated?
   speed
   fd-speed
@@ -101,9 +98,7 @@ globals [
   m
   l
   mouse-was-down?
-  
   vert-cap
-  
   int1
   int2
     
@@ -530,14 +525,8 @@ to move-gm
   ifelse is-turtle? car-ahead [
     set space-hw distance car-ahead
     set speed-diff [speed] of car-ahead - speed
-    ;ifelse space-hw < 0.04
-    ;[
-    ;  set speed 0
-    ;]
-    ;[
-      set acc alpha * 0.27 * ((speed) ^ m) / ((space-hw) ^ l) * speed-diff
-      set speed speed + acc
-    ;] 
+    set acc alpha * 0.27 * ((speed) ^ m) / ((space-hw) ^ l) * speed-diff
+    set speed speed + acc
     
     if speed > (space-hw - 0.04) [
       set speed min list (space-hw - 0.04) [speed] of car-ahead
@@ -590,7 +579,7 @@ to-report nearestGoal [ source evac-type ]
     set goals intersections with [gate? and gate-type = "Hor"]
   ]
   if evac-type = -1 [
-    set goals intersections with [gate?] ;and gate-type = "Ver" ]
+    set goals intersections with [gate?]
   ]
   
   report min-one-of goals [ distance source]
@@ -707,13 +696,6 @@ to go
       set moving? false
       set rchd? true
       set origin gll
-      ;if [gate?] of origin
-      ;[
-      ;  set color green
-      ;  set moving? 0
-      ;  set evacuated? true
-      ;  ;set ev-times lput ( ticks / 60 ) ev-times
-      ;]
       if [depth] of patch-here >= Hc and evacuated? = false [
         set color red
         set moving? 0
@@ -888,12 +870,10 @@ to go
   
   ask cars with [moving? = true]
   [
-    ;set speed speedfunc self speed
     move-gm
     fd speed
     if (distance destination < 0.005 )
     [
-      ;move-to destination
       set moving? false
       ask road-on
       [
@@ -924,7 +904,6 @@ to go
   ask pedestrians with [evacuated? = false]
   [
     if [who] of origin = goal or goal = -1
-    ;if [gate?] of origin   
     [
       set color green
       set moving? 0
@@ -961,7 +940,6 @@ to go
     if (distance destination < 0.0005 )
     [
       set moving? false
-      ;ask rd [ set crowd crowd - 1]
       set prev-origin origin
       set origin destination
       if [who] of origin = goal or goal = -1
@@ -978,159 +956,8 @@ to go
       ]
     ]
   ]
-  
-  
   tick  
 end
-
-to XYs [filename]
-  carefully [ file-delete filename ] [ ]
-  if (filename = false)
-    [ stop ]
-  file-open filename
-  let id 1
-  ask intersections [
-    show id
-    set id id + 1
-    ;file-write -123.924793 + (xcor / 524.6968613)
-    ;file-write 45.993087 + (ycor / 524.6968613)
-    file-write -123.92401 + (xcor / 1515.1515)
-    file-write 45.99305 + (ycor / 2127.6595)
-    
-    ;set xd ( xd + 123.92401) / 0.00066
-    ;set yd ( yd - 45.99305 ) / 0.00047
-    
-    file-print ""
-  ]
-  file-close
-end
-
-to mapview
-  import-drawing "Map.jpg"
-  ask roads [set color black]
-end
-
-to satview
-  import-drawing "Sat.jpg"
-  ask roads [set color black]
-end
-
-to clrback
-  cd
-  ask roads [set color white]
-end
-
-to plot-centroids
-  file-close-all
-  file-open "centroid_cords.txt"
-  while [not file-at-end?] [
-    crt 1 [
-      set xcor (file-read + 123.92401) / 0.00066
-      set ycor (file-read - 45.99305 ) / 0.00047
-      set size 2
-      set shape "circle"
-      set color red
-    ]
-  ]
-  
-  file-close
-end
-
-
-to save_coordinates_matlab
-  let counter-id 0
-  ask intersections [
-    set temp-id counter-id
-    set counter-id counter-id + 1
-  ]
-  
-  file-close-all
-  file-open "TrimmedMatlabCoords.txt"
-  ask intersections [
-    file-write temp-id
-    file-write xcor
-    file-write ycor
-    file-print ""
-  ]
-  file-close
-end
-
-to save_links_matlab
-  file-close-all
-  file-open "NewMatlabLinks.txt"
-  let row 0
-  foreach n-values count intersections [?][
-    let f_id ?
-    set row n-values count intersections [0]
-    print ?
-    foreach [temp-id] of [road-neighbors] of one-of intersections with [temp-id = f_id][
-      set row replace-item ? row 1
-    ]
-    
-    file-write row
-    file-print ""
-  ]
-    ;foreach n-values count intersections [?][
-    ;  let e_id ?
-    ;  ask one-of intersections with [temp-id = f_id][
-    ;    ifelse road-neighbor? one-of intersections with [temp-id = e_id][
-    ;      file-write 1
-    ;    ]
-    ;    [
-    ;      file-write 0
-    ;    ]
-    ;  ]
-    ;]
-    
-    ;file-print ""
-  ;]
-  
-  file-close
-  end
-
-to test
-  foreach [1 2 3 4 6][
-    foreach [3 1 2][
-      show ?
-    ]
-  ]
-end
-
-to increase-intersections
-  ask intersections [set color black set size 2]
-  ask links [
-    ask one-of both-ends [
-      set int1 self
-      ask other-end [
-        set int2 self
-        hatch-intersections 1[
-          set xcor ( [xcor] of int1 + [xcor] of int2 ) / 2
-          set ycor ( [ycor] of int1 + [ycor] of int2 ) / 2
-          set color black
-          set size 2
-          
-          create-road-with int1
-          create-road-with int2
-        ]
-      ]
-    ]
-    
-    die
-  ]
-end
-
-
-to write-tsunami
-  file-open "max-depth-500"
-  ask patches [
-    file-write pxcor
-    file-write pycor
-    file-write max_depth
-    file-print ""
-  ]
-  file-close
-end
-  
   
   
 @#$#@#$#@
