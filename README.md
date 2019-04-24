@@ -64,4 +64,4 @@ Mostafizi, A., Wang, H., Cox, D., Cramer, L. A., & Dong, S. (2017). Agent-based 
 
 ## Authors
 
-* **Alireza Mostafizi** - [armostafizi](https://github.com/armostafizi)
+* **Alireza Mostafizi** - [armostafizi](https://github.com/armostafizi) / [alire.me](https://alire.me)
