@@ -1,626 +1,248 @@
-breed [ intersections intersection ]
-breed [ pedestrians pedestrian ]
-breed [ cars car ]
-breed [ residents resident]
-breed [ contours contour]
-breed [ depth-intersections depth-intersection]
-undirected-link-breed [ roads road ]
+;;;;;************** TSUNAMI EVACUATION MODEL *********************;;;;
+;;;;;                                                             ;;;;
+;;;;; This model simulates a tsunami evacuation scenario with     ;;;;
+;;;;; capability of adding vertical evaucation shelters and       ;;;;
+;;;;; simulating transportation network damage and road closures. ;;;;
+;;;;; This model is developed by Alireza Mostafizi and under      ;;;;
+;;;;; direct supervision of Dr. Haihzong Wang, Dr. Dan Cox, and   ;;;;
+;;;;; Dr. Lori Cramer from Oregon State University. Tsunami       ;;;;
+;;;;; inundations are modeled by Dr. Hyoungsu Park. If you use    ;;;;
+;;;;; this model to any extent, we ask you to cite our relevant   ;;;;
+;;;;; publications listed in the Readme file of the repository.   ;;;;
+;;;;;                                                             ;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-patches-own [
-  depth
-  depths
-  max_depth
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;; EXTENSIONS ;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+extensions [
+  gis   ; the GIS extension is required to load the 1. transportation network
+        ;                                           2. shelter locations
+        ;                                       and 3. population distribution
+  csv   ; the CSV extension is required to read the tsunami inundation file
+]
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;; BREEDS ;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+breed [ residents resident]              ; the evacuees before they make it to the transportation network
+breed [ pedestrians pedestrian ]         ; a resident will turn to a pedestrian (after they make it to the transportation network) if they decided to walk to the shelters
+breed [ cars car ]                       ; a resident will turn to a car (after they make it to the transportation network) if they decided to drive to the shelters
+breed [ intersections intersection ]     ; intersections are treated as agents
+directed-link-breed [ roads road ]       ; roads are trated as directed links between the intersection (e.g, two directed links between a pair of intersections if the road is two-way)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;; VARIABLES ;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+patches-own [    ; the variables that patches own
+  depth          ; current tsunami depth
+  depths         ; sequence of tsunami depths over time
+  max_depth      ; maximum depth of tsunami over time at the end of simulation
+]
+
+residents-own [  ; the variables that residents own
+  init_dest      ; initial destination, the closest intersection to the agent at the start of simulation
+  reached?       ; true if the agent is reached to the init_dest and ready to turn to pedestrian or car, false if not
+  current_int    ; current/previous intersection of an agent, 0 if none
+  moving?        ; true if the agent is moving, false if not
+  evacuated?     ; true if an agent is evacuated, either in a shelter or outside of the shelter
+  dead?          ; true if an agent is dead and caught by the tsunami
+                 ; if the simulation is ended and the agent is not caught by the tsunami
+  speed          ; speed of the agent, measured in patches per tick
+  decision       ; the agents decision code: 1 for Hor Evac on foot
+                 ;                           2 for Hor Evac by Car
+                 ;                           3 for Ver Evac on foot
+                 ;                           4 for Ver Evac by Car
+  miltime        ; the agents milling time (preparation time before the evacuation starts) referenced from the earthquake
+                 ; measureed in seconds
+]
+
+roads-own [      ; the variables that roads own
+  crowd          ; number of people on foot on each link at any time
+  traffic        ; number of cars on each link at any time
+  mid-x          ; xcor of the middle point of a link, in patches
+  mid-y          ; ycor of the middle point of a link, in patches
+]
+
+intersections-own [ ; the variables that intersections own
+  shelter?          ; true if there is a shelter at an interseciton, flase if not
+  shelter_type      ; string representing the type of the shelter, 'Hor' for horizontal
+                    ;                                            , 'Ver' for vertical
+  id                ; a unique id associated to each intersection (0 to number of intersections - 1)
+  previous          ; for calculating the shortest path from each intersection to the a shelter (A* Alg)
+  fscore            ; for calculating the shortest path from each intersection to the a shelter (A* Alg)
+  gscore            ; for calculating the shortest path from each intersection to the a shelter (A* Alg)
+  ver-path          ; best path from an intersection to the vertical shelter (list of intersection 'who's)
+  hor-path          ; best path from an intersection to the horizontal shelter (list of intersection 'who's)
+  evacuee_count     ; the number of agents that are evacuated in an intersection, if there is a shelter in it
 ]
 
 
-
-residents-own [
-  gll
-  origin
-  moving?
-  evacuated?
-  speed
-  fd-speed
-  rchd?
-  decision
-  miltime
+pedestrians-own [; the variables that pedestrians own
+  current_int    ; current/previous intersection of an agent, 0 if none
+  shelter        ; 'who' of the intersection that the agent is heading to (its shelter)
+                 ; -1 if there is none due to disconnectivity in the network
+  next_int       ; the next intersection an agent is heading towards
+  moving?        ; true if the agent is moving, false if not (e.g., turning at intersection)
+  evacuated?     ; true if an agent is evacuated, either in a shelter or outside of the shelter
+  dead?          ; true if an agent is dead and caught by the tsunami
+  speed          ; speed of the agent, measured in patches per tick
+  path           ; list of intersection 'who's that represent the path to the shelter of an agent
+  decision       ; the agents decision code: 1 for Hor Evac on foot
+                 ;                           3 for Ver Evac on foot
 ]
 
-roads-own [
-  crowd
-  traffic
-  usage
-  total-traffic
-  total-crowd
-  total-usage
-  ms
-  mmean
-  max-traffic
+cars-own [       ; the variables that cars own
+  current_int    ; current/previous intersection of an agent, 0 if none
+  moving?        ; true if the agent is moving, false if not (e.g., turning at intersection)
+  evacuated?     ; true if an agent is evacuated, either in a shelter or outside of the shelter
+  dead?          ; true if an agent is dead and caught by the tsunami
+  next_int       ; the next intersection an agent is heading towards
+  shelter        ; 'who' of the intersection that the agent is heading to (its shelter)
+  speed          ; speed of the agent, measured in patches per tick
+  path           ; list of intersection 'who's that represent the path to the shelter of an agent
+  decision       ; the agents decision code: 2 for Hor Evac by Car
+                 ;                           4 for Ver Evac by Car
+  car_ahead      ; the car that is immediately ahead of the agent
+  space_hw       ; the space headway between the agent and 'car_ahead'
+  speed_diff     ; the speed difference between the agent and 'car_ahead'
+  acc            ; acceleration of the car agent
+  road_on        ; the link that the car is travelling on
 ]
 
-intersections-own [  
-   gate?
-   gate-type
-   temp-id
-   previous
-   fscore
-   gscore
-   ver-path
-   hor-path
-   speed
-   ]
+globals [        ; global variables
+  ev_times       ; list of evacuation times (in mins) for all agents referenced from the earthquake
+                 ; later to be used to look into the distribution of the evacuation times
+  mouse-was-down?; event-handler variable to capture mouse clicks accurately
+  road_network   ; contains the road network gis information
+  population_distribution
+                 ; contains population distribution gis information
+  shelter_locations
+                 ; contains shelter locations gis information
 
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;;;;;;;;; CONVERSION RATIOS ;;;;;;;;;
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-pedestrians-own [
-  origin
-  prev-origin
-  goal
-  destination
-  moving?
-  evacuated?
-  speed
-  fd-speed
-  path
-  ev-time
-  tr-type
-  decision
+  patch_to_meter ; patch to meter conversion ratio
+  patch_to_feet  ; patch to feet conversion ratio
+  fd_to_ftps     ; fd (patch/tick) to feet per second
+  fd_to_mph      ; fd (patch/tick) to miles per hour
+  tick_to_sec    ; ticks to seconds - usually 1
+
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;;;;;;;;;; TRANSFORMATIONS ;;;;;;;;;;
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+  min_lon        ; minimum longitude that is associated with min_xcor
+  min_lat        ; minimum latitude that is associated with min_ycor
 ]
 
-cars-own [
-  origin
-  prev-origin
-  moving?
-  evacuated?
-  destination
-  next-destination
-  goal
-  acc
-  speed
-  path
-  ev-time
-  tr-type
-  decision
-  car-ahead
-  space-hw
-  speed-diff
-  road-on
-]
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;; HELPER FUNCTIONS ;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-globals [ 
-  ev-times
-  xts
-  yts
-  trnum
-  xrs
-  yrs
-  rsnum
-  origins
-  m
-  l
-  mouse-was-down?
-  vert-cap
-  int1
-  int2
-    
-  ]
+to print-conv-ratios
+  print "1 ft = 0.0059043 patch"
+  print 1 / patch_to_feet
 
+  print "1 patch = 169.37 ft"
+  print patch_to_feet
+
+  print "1 ft/s = 0.0059043 fd"
+  print 1 / fd_to_ftps
+
+  print "1 mph = 0.008659637 fd"
+  print 1 / fd_to_mph
+
+  ;; xcor = (longitude + 123.92401) / 0.00066
+  ;; ycor = (latitude - 45.99305 ) / 0.00047
+end
+
+; returns truen if the moouse was clicked
 to-report mouse-clicked?
   report (mouse-was-down? = true and not mouse-down?)
 end
 
-to find-origins
-  set origins []
+; returns a list of intersections for which the shortest path to the closest shelter should be calculated
+to-report find-origins
+  let origins []
   ask residents [
+    ; add the closest intersection to each agent at the start of the simulation to the origins
+    ; there is no need to calculate the shortest path for the rest of the intersections
     set origins lput min-one-of intersections [ distance myself ] origins
   ]
-  
   set origins remove-duplicates origins
+  report origins
 end
 
+; generates a randomly drawn number from Rayleigh dist. with the given sigma
+to-report rayleigh-random [sigma]
+  report (sqrt((- ln(1 - random-float 1 ))*(2 *(sigma ^ 2))))
+end
 
-to load-network [ filename ]  
-  if (filename = false)
-    [ stop ]
-  file-open filename
-  let num-intersections file-read
-  let num-links file-read
-  let ideal-segment-length file-read
-
-  let id-counter 0  
-  repeat num-intersections
-  [ 
-    create-intersections 1 [
-      set temp-id id-counter
-      set id-counter id-counter + 1
-      set xcor file-read
-      set ycor file-read
-      set gate? false
-      set size 0.1
-      set shape "square"
-      set color white
-    ]
+; TURTLE FUNCTION: sets random decision as to the mode (foot/car) and the shelter (horizontal/vertical) for the evaucation based on the percentages entered by the user
+;                  in addition, it sets the appropriate milling time based on the decision and its corresponding Rayleigh dist. parameters entered by the user
+to make-decision
+  let rnd random-float 100
+  ifelse (rnd < R1_HorEvac_Foot ) [
+    set decision 1
+    set miltime ((Rayleigh-random Rsig1) + Rtau1 ) * 60 / tick_to_sec
   ]
-  repeat num-links
   [
-    let id1 file-read
-    let id2 file-read
-    let primary? file-read
-    
-    ask intersections with [ temp-id = id1 ]
-    [ 
-        create-roads-with intersections with [ temp-id = id2 ]
+    ifelse (rnd >= R1_HorEvac_Foot and rnd < R1_HorEvac_Foot + R2_HorEvac_Car ) [
+      set decision 2
+      set miltime ((Rayleigh-random Rsig2) + Rtau2 ) * 60 / tick_to_sec
     ]
-  ]
-  ask roads [
-    set color black
-    set thickness 0.05
-  ]
-  
-  file-close
-  output-print "Network Loaded"
-  beep
-end
-
-
-
-to load-routes
-  load-routes-file "hor-routes"
-  load-routes-file "ver-routes"
- 
-  beep
-  output-print "Routes Loaded"
-end
-
-
-to load-routes-file [file-name]
-  if (file-name = false) [ stop ]
-  file-open file-name
-  let mode file-read
-  
-  if mode = -1 [
-    let cnt file-read
-    repeat cnt [
-      let num file-read
-      ask intersection num [
-        set ver-path file-read
-      ]
-    ]
-  ]
-  if mode = 0 [
-    let cnt file-read
-    repeat cnt [
-      let num file-read
-      ask intersection num [
-        set hor-path file-read
-      ]
-    ]
-  ]
-  file-close
-end
-
-
-to save-routes [ mode filename ]
-  file-close-all
-  find-origins
-  carefully [ file-delete filename ] [ ]
-  if (filename = false)
-    [ stop ]
-  ;let id 1
-  file-open filename
-  file-write mode
-  file-write length origins
-  foreach origins [
-    ;show id
-    file-write [who] of ?
-    file-write Astar ? (nearestGoal ? mode)
-    ;set id id + 1
-  ]
-  file-close
-end
-
-to load-gates
-   ask intersections [
-    set gate? false
-    set color white
-    set size 0.1
-  ]
-   
-  load-gates-file "Gates"
-  
-  output-print "Gates Loaded"
-  beep
-end
-
-to pick-verticals
-  let mouse-is-down? mouse-down?
-  if mouse-clicked? [
-    ask min-one-of intersections [distancexy mouse-xcor mouse-ycor][
-      set gate? true
-      set gate-type "Ver"
-      set shape "circle"
-      set size 2
-      set color violet
-    ]
-    display
-  ]
-  set mouse-was-down? mouse-is-down?
-end
-
-to kill-intersections
-  let mouse-is-down? mouse-down?
-  if mouse-clicked? [
-    ask intersections with [distancexy mouse-xcor mouse-ycor < 1][ die ]
-    display
-  ]
-  set mouse-was-down? mouse-is-down?
-end
-
-
-
-to make-vertical [id]
-  ask intersection id [
-    set gate? true
-    set gate-type "Ver"
-    set shape "circle"
-    set size 2
-    set color violet
-  ]
-  display
-end
-
-to pick-intersections
-  let mouse-is-down? mouse-down?
-  if mouse-clicked? [
-    ask intersections with [distancexy mouse-xcor mouse-ycor < 5][
-      set gate? true
-      set gate-type "Ver"
-      set shape "circle"
-      set size 2
-      set color violet
-    ]
-    display
-  ]
-  set mouse-was-down? mouse-is-down?
-end
-
-
-to load-gates-file [ filename ]
-  if (filename = false)
-    [ stop ]
-  file-open filename
-  let mode file-read
-  let num file-read
-  repeat num [
-    ask intersection file-read [
-       st
-       set gate? true
-       if mode = 0 [set gate-type "Hor"]
-       if mode = -1 [set gate-type "Ver"]
-    ]
-  ]
-    
-  file-close
-  beep
-end
-
-to show-gates
-  ask intersections with [gate? = true and gate-type = "Hor"]
-  [
-    set shape "circle"
-    set size 2
-    set color yellow
-  ]
-  
-  ask intersections with [gate? = true and gate-type = "Ver"]
-  [
-    set shape "circle"
-    set size 2
-    set color violet
-  ]
-end
-
-
-to load-Tsunami
-  let file-name ""
-  let rep 0
-  if tsunami-case = "500yrs" [set file-name "tsunamiFiles/Seaside_500yr.dat" set rep 120]
-  if tsunami-case = "1000yrs" [set file-name "tsunamiFiles/Seaside_1000yr.dat" set rep 121]
-  if tsunami-case = "2500yrs" [set file-name "tsunamiFiles/Seaside_2500yr.dat" set rep 121]
-  file-open file-name
-  while [ not file-at-end? ]
-  [
-    let xd file-read
-    let yd file-read
-    set xd ( xd + 123.92401) / 0.00066
-    set yd ( yd - 45.99305 ) / 0.00047
-    
-    
-    let dps [0]
-    
-    repeat rep [
-      set dps lput file-read dps
-    ]
-        
-    ask patch xd yd [
-      set depths dps
-    ]
-  ]
-  
-  file-close
-  
-  output-print "TsunamiData Loaded"
-  beep
-end
-
-
-to read-residents [ filename ]
-  file-close-all
-  if (filename = false)
-    [ stop ]
-  set xrs []
-  set yrs []
-  file-open filename
-  set rsnum file-read
-  repeat rsnum [
-    set xrs lput file-read xrs
-    set yrs lput file-read yrs
-  ]
-  file-close
-  beep
-end
-
-
-
-to setup-residents
-  
-  ask residents [ die ]
-  ask intersections with [not gate?][ set size 0.01]
-  let xr xrs
-  let yr yrs
-  
-  repeat rsnum [
-    create-residents 1 [
-      set xcor item 0 xr
-      set ycor item 0 yr
-      set xr remove-item 0 xr
-      set yr remove-item 0 yr
-      set color turquoise
-      set shape "dot"
-      set size 1
-      set moving? true
-      set gll min-one-of intersections [ distance myself ]
-      set speed random-normal Ped-Speed Ped-Sigma
-      ;; 1 ft = 0.0059043 patch
-      ;; 1 patch = 169.37 ft 
-      ;; 1 mph = 31.175 patch
-      ;; 1 ft/s = 0.0059043 fd
-      ;; 1 mph = 0.008659637 fd
-      set speed speed * 0.0059043
-      if speed < 0.001 [set speed 0.001]
-      
-      set evacuated? false
-      set rchd? false
-      let rnd random-float 100
-      ifelse (rnd < R1-HorEvac-Foot ) [
-        set decision 1
-        set miltime ((Rayleigh-random Rsig1) + Rtau1 ) * 60
+    [
+      ifelse (rnd >= R1_HorEvac_Foot + R2_HorEvac_Car and rnd < R1_HorEvac_Foot + R2_HorEvac_Car + R3_VerEvac_Foot ) [
+        set decision 3
+        set miltime ((Rayleigh-random Rsig3) + Rtau3 ) * 60 / tick_to_sec
       ]
       [
-        ifelse (rnd < R2-HorEvac-Car + R1-HorEvac-Foot ) [
-          set decision 2
-          set miltime ((Rayleigh-random Rsig2) + Rtau2 ) * 60
-        ]
-        [
-          ifelse (rnd < R3-VerEvac-Foot + R2-HorEvac-Car + R1-HorEvac-Foot ) [
-            set decision 3
-            set miltime ((Rayleigh-random Rsig3) + Rtau3 ) * 60
-          ]
-          [
-            set decision 4
-            set miltime ((Rayleigh-random Rsig4) + Rtau4 ) * 60
-          ]
+        if (rnd >= R1_HorEvac_Foot + R2_HorEvac_Car + R3_VerEvac_Foot and rnd < R1_HorEvac_Foot + R2_HorEvac_Car + R3_VerEvac_Foot + R4_VerEvac_Car ) [
+          set decision 4
+          set miltime ((Rayleigh-random Rsig4) + Rtau4 ) * 60 / tick_to_sec
         ]
       ]
-      
-      if immediate-evacuation [
-        set miltime 0
-      ]
-      
-      st
     ]
   ]
-  beep
 end
 
-to setup-init-val
-  
-  set R1-HorEvac-Foot 25
-  set R2-HorEvac-Car 25
-  set R3-VerEvac-Foot 25
-  set R4-VerEvac-Car 25
-
-  set Hc 0.5
-  
-  set immediate-evacuation False
-  
-  set Ped-Speed 4
-  set Ped-Sigma 0.65
-  
-  set Max-Speed 35
-  set acceleration 5
-  set deceleration 25
-  
-  set Rtau1 0
-  set Rsig1 1.65
-  set Rtau2 0
-  set Rsig2 1.65
-  set Rtau3 0
-  set Rsig3 1.65
-  set Rtau4 0
-  set Rsig4 1.65
-  set vert-cap 0
-
-end
-
-
-to load-population
-  setup-residents
-  output-print "Population Loaded"
-  beep
-end
-
-to pre-read
-  file-close-all
-  ca
-  ask patches [set pcolor white]
-  ask residents [die]
-  ask pedestrians [die]
-  ask cars [die]
-  set ev-times []
-  load-network "Map"
-  load-Tsunami
-  load-gates
-  show-gates
-  set m 0
-  set l 2
-  
-end
-
-to read-all 
-  read-residents "Pop"
-  load-population
-end
-
-to routes
-  save-routes 0 "hor-routes"
-  save-routes -1 "ver-routes"
-end
-
-to finish-routes
-  load-routes
-  ask roads [
-    set traffic 0
-    set crowd 0
-    set usage 0
-  ]
-  set ev-times []
-  reset-ticks
-  tick
-end
-
-
-
-
-to move-gm
-  
-  set car-ahead cars in-cone 0.2 20
-  set car-ahead car-ahead with [self != myself]
-  set car-ahead car-ahead with [moving? = true]
-  set car-ahead car-ahead with [ abs(subtract-headings heading [heading] of myself) < 160]
-  set car-ahead car-ahead with [distance myself > 0.0001]
-  ;set car-ahead car-ahead with [destination = [destination] of myself or destination = [next-destination] of myself]
-  if any? car-ahead with [road-on = [road-on] of myself][set car-ahead car-ahead with [road-on = [road-on] of myself]]
-  set car-ahead min-one-of car-ahead [distance myself]
-  
-  ifelse is-turtle? car-ahead [
-    set space-hw distance car-ahead
-    set speed-diff [speed] of car-ahead - speed
-    set acc alpha * 0.27 * ((speed) ^ m) / ((space-hw) ^ l) * speed-diff
-    set speed speed + acc
-    
-    if speed > (space-hw - 0.04) [
-      set speed min list (space-hw - 0.04) [speed] of car-ahead
-    ]
-    
-    if speed > max-speed * 0.008659637 [set speed max-speed * 0.008659637]
-    if speed < 0 [set speed 0]
-  ]
-  [
-    if speed < max-speed * 0.008659637 [set speed speed + (acceleration * 0.0059043)]
-    if speed > max-speed * 0.008659637 [set speed max-speed * 0.008659637]
-  ]
-  
-  if speed > distance destination [set speed distance destination]
-end
-
-  
-  
-
-to-report rayleigh-random [sigma]
-  report (sqrt( ( - ln ( 1 - random-float 1 )) * ( 2 * ( sigma ^ 2 ))))
-end
-
-
-to-report Astar-smallest [ q ]
-  let rep 0
-  let fsc 100000000
-  foreach q [
-    let fscr [fscore] of intersection ?
-    if fscr < fsc [
-      set fsc fscr
-      set rep ?
-    ]
-  ]
-  report rep
-end
-
-
-to-report hce [ source gl ]
-  let euclidian 100000
-  ask source [
-    set euclidian distance gl
-  ]
-  report euclidian
-end
-
-to-report nearestGoal [ source evac-type ]
-  let goals []
-  if evac-type = 0 [
-    set goals intersections with [gate? and gate-type = "Hor"]
-  ]
-  if evac-type = -1 [
-    set goals intersections with [gate?]
-  ]
-  
-  report min-one-of goals [ distance source]
-end
-
-to-report Astar [ source gl ]
-  let reached? false
-  let dstn nobody
-  let closedset []
-  let openset []
-  
-  ask intersections [
+; finds the shortest path from and intersection (source) to a shelter (one of gls) with A* algorithm
+; gl is only used as a heuristic for the algorithm, the closest destination in a network is not necessarily the closest in euclidean distance
+to-report Astar [ source gl gls ]
+  let rchd? false       ; true if the algorithm has found a shelter
+  let dstn nobody       ; the destinaton or the closest shelter
+  let closedset []      ; equivalent to closed set in A* alg
+  let openset []        ; equivalent to open set in A* alg
+  ask intersections [   ; initialize "previous", which later will be used to reconstruct the shortest path for each intersection
     set previous -1
   ]
-    
-  set openset lput [who] of source openset
-  ask source [
+  set openset lput [who] of source openset  ; start the open set with the source intersection
+  ask source [                              ; initialize g and f score for the source intersection
     set gscore 0
-    set fscore (gscore + hce source gl)
+    set fscore (gscore + distance gl)
   ]
-  while [ not empty? openset and (not reached?)] [
-    let current Astar-smallest openset
-    ;;show current
-    if current = [who] of gl [
-      ;reconstruct path
-      set dstn intersection current
-      set reached? true
-      
+  while [ not empty? openset and (not rchd?)] [ ; while a destination hasn't been found, look for one
+    let current Astar-smallest openset          ; pick the most promissing intersection from the open set
+    if member? current  [who] of gls [          ; if it is one of the candid shelters, we're done
+      set dstn intersection current             ; set the destination
+      set rchd? true                            ; and toggle the flag so we don't look for a destination anymore and move on to the recosntructing the path
     ]
-    set openset remove current openset
+    set openset remove current openset          ; update the open and closed set
     set closedset lput current closedset
-    ask intersection current [
-      let neighbs link-neighbors
-      ask neighbs [
-        let tent-gscore [gscore] of myself + [link-length] of (road who [who] of myself)
-        let tent-fscore tent-gscore + hce self gl
-        if ( member? who closedset and ( tent-fscore >= fscore ) ) [stop];[ continue ]
-        if ( not member? who closedset or ( tent-fscore >= fscore )) [
+    ask intersection current [                  ; explore the neighbors of the current intersection
+      ask out-road-neighbors [
+        let tent_gscore [gscore] of myself + [link-length] of (road [who] of myself who)   ; update f and gscore tentatively
+        let tent_fscore tent_gscore + distance gl
+        if ( member? who closedset and ( tent_fscore >= fscore ) ) [stop]                  ; if not improved, stop
+        if ( not member? who closedset or ( tent_fscore >= fscore )) [                     ; if the score improved, continue updating
           set previous current
-          set gscore tent-gscore
-          set fscore tent-fscore
+          set gscore tent_gscore
+          set fscore tent_fscore
           if not member? who openset [
             set openset lput who openset
           ]
@@ -628,347 +250,653 @@ to-report Astar [ source gl ]
       ]
     ]
   ]
-  
-  let route []
-  ifelse dstn != nobody [
-    while [ [previous] of dstn != -1 ] [
+  let route []                                    ; reconstruct the path to destination
+  ifelse dstn != nobody [                         ; if there was a path
+    while [ [previous] of dstn != -1 ] [          ; use "previous" to recosntruct untill "previous" is -1
       set route fput [who] of dstn route
       set dstn intersection ([previous] of dstn)
     ]
   ]
   [
-    set route []
+    set route []                                  ; if there was no path, return an empty list
   ]
-  report route      
+  report route
 end
 
-to color-max-depth
-  ask patches [
-      let cl 99.9 - max_depth
-      if cl < 90 [set cl 90]
-      if cl > 99.9 [set cl 99.9]
-      set pcolor cl
+; returns the who of an intersection in who_list with the lowest fscore
+to-report Astar-smallest [ who_list ]
+  let min_who 0
+  let min_fscr 100000000
+  foreach who_list [ [?1] ->
+    let fscr [fscore] of intersection ?1
+    if fscr < min_fscr [
+      set min_fscr fscr
+      set min_who ?1
     ]
+  ]
+  report min_who
 end
 
+; TURTLE FUNCTION: calculates the speed of the car based on general motors car-following model
+;                  it incorporates the speed of the leading car as well as the space headway
+to move-gm
+  set car_ahead cars in-cone (35 / patch_to_feet) 20                                         ; get the cars ahead in 35ft (almost half a block) and in field of view of 20 degrees
+  set car_ahead car_ahead with [self != myself]                                              ; that are not myself
+  set car_ahead car_ahead with [not evacuated?]                                              ; that have not made it to the shelter yet (no congestion at the shelter)
+  set car_ahead car_ahead with [moving?]                                                     ; TODO: Test this
+  set car_ahead car_ahead with [ abs(subtract-headings heading [heading] of myself) < 160]   ; with relatively the same general heading as mine (not going the opposite direction)
+  set car_ahead car_ahead with [distance myself > 0.0001]                                    ; not exteremely close to myself
+  set car_ahead min-one-of car_ahead [distance myself]                                       ; and the closest car ahead
+  ifelse is-turtle? car_ahead [                                                              ; if there IS a car ahead:
+    set space_hw distance car_ahead                                                          ; the space headway with the leading car
+    set speed_diff [speed] of car_ahead - speed                                              ; the speed difference with the leadning car
+    ifelse space_hw < (6 / patch_to_feet) [set speed 0]                                      ; if the leading car is less than ~6ft away, stop
+    [                                                                                        ; otherwise, find the acceleration based on the general motors car-following model
+      set acc (alpha / fd_to_mph * 5280 / patch_to_feet) * ((speed) ^ 0) / ((space_hw) ^ 2) * speed_diff
+                                                                                             ; converting mi2/hr to patch2/tick = converting mph*mi to fd*patch
+                                                                                             ; m = speed componnent = 0 / l = space headway component = 2
+      set speed speed + acc                                                                  ; update the speed
+    ]
+    if speed > (space_hw - (6 / patch_to_feet)) [                                            ; if the current speed will put the car less than 6ft away from the leading car in the next second,
+      set speed min list (space_hw - (6 / patch_to_feet)) [speed] of car_ahead               ; reduce the speed in a way to not get closer to the leading car
+    ]
+    if speed > (max_speed / fd_to_mph) [set speed (max_speed / fd_to_mph)]                   ; cap the speed to max speed if larger
+    if speed < 0 [set speed 0]                                                               ; no negative speed
+  ]
+  [                                                                                          ; if ther IS NOT a car ahead:
+    if speed < (max_speed / fd_to_mph) [set speed speed + (acceleration / fd_to_ftps * tick_to_sec)]
+                                                                                             ; accelerate to get to the speed limit ;; TODO: check
+    if speed > max_speed / fd_to_mph [set speed max_speed / fd_to_mph]                       ; cap the speed to max speed if larger
+  ]
 
+  if speed > distance next_int [set speed distance next_int]                                 ; avoid jumping over the next intersection the car is heading to
+end
 
+; TURTLE FUNCTION: marks an agent as evacuee
+to mark-evacuated
+  if not evacuated? and not dead? [                              ; if the agents is not dead or evacuated, mark it as evacuated and set proper characteristics
+    set color green
+    set moving? false
+    set evacuated? true
+    set dead? false
+    set ev_times lput ( ticks * tick_to_sec / 60 ) ev_times      ; add the evacuees evacuation time (in minutes) to ev_times list
+    ask current_int [set evacuee_count evacuee_count + 1]        ; increment the evacuee_count of the shelter the agent evacuated to
+  ]
+end
+
+; TURTLE FUNCTION: marks an agent as dead
+to mark-dead                                                     ; mark the agent dead and set proper characteristics
+  set color red
+  set moving? false
+  set evacuated? false
+  set dead? true
+end
+
+; returns true if the general direction (north, east, south, west) and the heading (0 <= h < 360) are alligned
+; used for removing one-way roads
+to-report is-heading-right? [link_heading direction]
+  if direction = "north" [ if abs(subtract-headings 0 link_heading) <= 90 [report true]]
+  if direction = "east" [ if abs(subtract-headings 90 link_heading) <= 90 [report true]]
+  if direction = "south" [ if abs(subtract-headings 180 link_heading) <= 90 [report true]]
+  if direction = "west" [ if abs(subtract-headings 270 link_heading) <= 90 [report true]]
+  report false
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;; SETUP INITIAL PARAMETERS ;:;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; this function sets some initial value for an initial try to run the model
+; if the user decides not to tweak any of the inputs
+to setup-init-val
+  set immediate_evacuation False  ; agents do not start evacuation immediately, instead they follow a Rayleigh distribution for their milling time
+  set R1_HorEvac_Foot 25          ; 25% of the agents evacuate horizontally on foot
+  set R2_HorEvac_Car 25           ; 25% of the agents evacuate horizontally with their car
+  set R3_VerEvac_Foot 25          ; 25% of the agents evacuate on foot and are open to vertical evaucation if it is closer to them compared to a shelter outside the inundation zone
+  set R4_VerEvac_Car 25           ; 25% of the agents evacuate with their car and are open to vertical evaucation if it is closer to them compared to a shelter outside the inundation zone
+  set Hc 0.5                      ; the critical wave height that marks the threshold of casualties is set to 0.5 meter
+  set Ped_Speed 4                 ; the mean of the normal dist. that the walking speed of the agents are drawn from is set to 4 ft/s
+  set Ped_Sigma 0.65              ; the standard deviation of the normal dist. that the walking speed of the agents are drawn from is set to 0.65 ft/s
+  set max_speed 35                ; maximum driving speed is set to 35 mph
+  set acceleration 5              ; acceleration of the vehicles is set to 5 ft/s2
+  set deceleration 25             ; deceleration of the vehicles is set to 25 ft/s2
+  set alpha 0.14                  ; alpha parameter of the car-following model is set to 0.14 mi2/hr (free-flow speed = 35 mph & jam density = 250 veh/mi/lane)
+  set Rtau1 10                    ; minimum milling time for all decision categories is set to 10 minutes
+  set Rtau2 10
+  set Rtau3 10
+  set Rtau4 10
+  set Rsig1 1.65                  ; the scale factor parameter of the Rayleigh distribution for all decision categories is set to 1.65
+  set Rsig2 1.65                  ; meaning that 99% of the agents evacuate within 5 minutes after the minimum milling time (between 10 to 15 mins in this case)
+  set Rsig3 1.65
+  set Rsig4 1.65
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;; READ GIS FILES ;:;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; read the gis files that are used to populate the model:
+;   1. road_network that contains the transportation network data
+;   2. shelter_locations that contains the location of the horizontal and vertical shelters
+;   3. population_distribution that contains the coordinates of the agents immediately before the evacuation
+to read-gis-files
+  gis:load-coordinate-system "road_network/road_network.prj"                                              ; load the projection system - WGS84 / UTM (METER) for your specific area
+  set shelter_locations gis:load-dataset "shelter_locations/shelter_locations.shp"                        ; read shelter locations
+  set road_network gis:load-dataset "road_network/road_network.shp"                                       ; read road network
+  set population_distribution gis:load-dataset "population_distribution/population_distribution.shp"      ; read population distribution
+  let world_envelope (gis:envelope-union-of (gis:envelope-of road_network)                                ; set the real world bounding box the union of all the read shapefiles
+                                            (gis:envelope-of shelter_locations)
+                                            (gis:envelope-of population_distribution))
+  let netlogo_envelope (list (min-pxcor + 1) (max-pxcor - 1) (min-pycor + 1) (max-pycor - 1))             ; read the size of netlogo world
+  gis:set-transformation (world_envelope) (netlogo_envelope)                                              ; make the transformation from real world to netlogo world
+  let world_width item 1 world_envelope - item 0 world_envelope                                           ; real world width in meters
+  let world_height item 3 world_envelope - item 2 world_envelope                                          ; real world height in meters
+  let world_ratio world_height / world_width                                                              ; real world height to width ratio
+  let netlogo_width (max-pxcor - 1) - ((min-pxcor + 1))                                                   ; netlogo width in patches (minus 1 patch padding from each side)
+  let netlogo_height (max-pycor - 1) - ((min-pycor + 1))                                                  ; netlogo height in patches (minus 1 patch padding from each side)
+  let netlogo_ratio netlogo_height / netlogo_width                                                        ; netlogo height to width ratio
+  ; calculating the conversion ratios
+  set patch_to_meter max (list (world_width / netlogo_width) (world_height / netlogo_height))             ; patch_to_meter conversion multiplier
+  set patch_to_feet patch_to_meter * 3.281     ; 1 m = 3.281 ft                                           ; patch_to_feet conversion multiplier
+  set tick_to_sec 1.0                                                                                     ; tick_to_sec ratio is set to 1.0 (preferred)
+  set fd_to_ftps patch_to_feet / tick_to_sec                                                              ; patch/tick to ft/s speed conversion multipler
+  set fd_to_mph  fd_to_ftps * 0.682            ; 1ft/s = 0.682 mph                                        ; patch/tick to mph speed conversion multiplier
+  ; to calculate the minimum longitude and latitude of the world associated with min_xcor and min_ycor
+  ; we need to check and see how the world envelope fits into that of netlogo's. This is why the "_ratio"s need to be compared againsts eachother
+  ; this is basically the missing "get-transformation" premitive in netlogo's GIS extension
+  ifelse world_ratio < netlogo_ratio [
+    set min_lon item 0 world_envelope - patch_to_meter
+    set min_lat item 2 world_envelope - ((netlogo_ratio - world_ratio) / netlogo_ratio / 2) * netlogo_height * patch_to_meter - patch_to_meter
+  ][
+    set min_lon item 0 world_envelope - ((world_ratio - netlogo_ratio) / world_ratio / 2) * netlogo_width * patch_to_meter - patch_to_meter
+    set min_lat item 2 world_envelope - patch_to_meter
+  ]
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;; LOAD NETWORK ;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; loads the transportation network, consisting of roads and intersections from "road_network" gis files
+; that are places under "road_network" directroy. Note the "direction" attribute associated with each road
+; which can either be "two-way" "north" "east" "south" or "west".
+to load-network
+  ; first remove the intersections and roads, if any
+  ask intersections [die]
+  ask roads [die]
+  ; start loading the network
+  foreach gis:feature-list-of road_network [ i ->                                      ; iterating through features to create intersections and roads
+    let direction gis:property-value i "DIRECTION"                                     ; get the direction of the link to make either a one- or two-way road
+    foreach gis:vertex-lists-of i [ j ->                                               ; iterating through the list of vertex lists (usually lengths of 1) of each feature
+      let prev -1                                                                      ; previous vertex indicator, -1 if None
+      foreach j [ k ->                                                                 ; iterating through the vertexes
+        if length ( gis:location-of k ) = 2 [                                          ; check if the vertex is valid with both x and y values
+          let x item 0 gis:location-of k                                               ; get x and y values for the intersection
+          let y item 1 gis:location-of k
+          let curr 0
+          ifelse any? intersections with [xcor = x and ycor = y][                      ; check if there is an intersection here, if not, make one, and if it is, use it
+            set curr [who] of one-of intersections with [xcor = x and ycor = y]
+          ][
+            create-intersections 1 [
+              set xcor x
+              set ycor y
+              set shelter? false
+              set size 0.1
+              set shape "square"
+              set color white
+              set curr who
+            ]
+          ]
+          if prev != -1 and prev != curr [                                             ; if this intersection is not the starting intersection, make roads
+            ifelse direction = "two-way" [                                             ; if the road is "two-way" make both directions
+              ask intersection prev [create-road-to intersection curr]
+              ask intersection curr [create-road-to intersection prev]
+            ][                                                                         ; if not, make only the direction that matches the direction requested, see is-heading-right? helper function
+              if is-heading-right? ([towards intersection curr] of intersection prev) direction [ ask intersection prev [create-road-to intersection curr]]
+              if is-heading-right? ([towards intersection prev] of intersection curr) direction [ ask intersection curr [create-road-to intersection prev]]
+            ]
+          ]
+          set prev curr
+        ]
+      ]
+    ]
+  ]
+  ; assign mid-x and mid-y variables to the roads that respresent the middle point of the link
+  ask roads [
+    set color black
+    set thickness 0.05
+    set mid-x mean [xcor] of both-ends
+    set mid-y mean [ycor] of both-ends
+    set traffic 0
+    set crowd 0
+  ]
+  output-print "Network Loaded"
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;; LOAD SHELTERS ;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; loads the shelters from from "shelter_locations" gis files that are under "shelter_locations" directory
+; note the "type" attribute associated with each shelter in the gis file, which can either be "hor" or "ver"
+; for horizontal and vertical shelters.
+to load-shelters
+  ; remove all the shelters before loading them
+  ask intersections [
+    set shelter? false
+    set shelter_type "None"
+    set color white
+    set size 0.1
+  ]
+  ; start loading the shelters
+  foreach gis:feature-list-of shelter_locations [ i ->     ; iterate through the shelters
+    let curr_shelter_type gis:property-value i "TYPE"      ; get the type of the shelter
+    foreach gis:vertex-lists-of i [ j ->
+      foreach j [ k ->
+        if length ( gis:location-of k ) = 2 [              ; check if the vertex has both x and y
+          let x item 0 gis:location-of k
+          let y item 1 gis:location-of k
+          ask min-one-of intersections [distancexy x y][   ; turn the closest intersection to (x,y) to a shelter
+            set shelter? true
+            set shape "circle"
+            set size 2
+            if curr_shelter_type = "hor" [                 ; assign proper type based on "curr_shelter_type"
+              set shelter_type "Hor"
+              set color yellow
+            ]
+            if curr_shelter_type = "ver" [
+              set shelter_type "Ver"
+              set color violet
+            ]
+            st
+          ]
+        ]
+      ]
+    ]
+  ]
+  output-print "Shelters Loaded"
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;; LOAD TSUNAMI DATA ;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; loads the tsunami inundation data from the csv file "tsunami_inundation.csv" that is under "tsunami_inundation" directory
+; note that for the seaside model, you can replace the current inundation model (10,000 year return interval) with the other scenarios
+; located in "extra_cases" directory. You just have to replace and rename the file to "tsunami_inundation.csv"
+; if no tsunami data is provided, this function writes the coordinates that the user needs to provided the water depths for in "coordinates.csv"
+to load-tsunami
+  let file_name "tsunami_inundation/tsunami_inundation.csv" ; the filename that contains the inundation data
+  ifelse file-exists? file_name [                           ; if tsunami data is provided, read it
+    file-close-all
+    file-open file_name
+    while [ not file-at-end? ] [
+      let row csv:from-row file-read-line
+      let x item 0 row                                         ; the longitude of the point the tsunami depths are provided
+      set x (x - min_lon) / patch_to_meter + min-pxcor         ; transforming the longitude to xcor of netlogo
+      set row remove-item 0 row                                ; remove the first item of 'row', longitude
+      let y item 0 row                                         ; the latitude of the point the tsunami depths are provided
+      set y (y - min_lat) / patch_to_meter + min-pycor         ; transforming the latitude to ycor of netlogo
+      set row remove-item 0 row                                ; remove the first item of 'row', the latitude
+      if x <= (max-pxcor + 0.5) and x >= (min-pxcor - 0.5) and ; if the point is in netlogo's world
+      y <= (max-pycor + 0.5) and y >= (min-pycor - 0.5) [
+        ask patch x y [                                        ; assign the rest of the 'row' which are the water depths to the closest patch
+          set depths row
+        ]
+      ]
+    ]
+    file-close
+    ask patches with [depths = 0 and not member? 0 [depths] of neighbors][ ; in some rare cases, and due to transforming lat/lon to netlogo xcor and ycor and projections, there are a few patches that are
+      set depths reduce [[?1 ?2] -> (map + ?1 ?2)] [depths] of neighbors   ; missing the water depth information, although provided in the initial data. water depth for these patches are simply interpolated
+      set depths map [ ? -> ? / 8 ] depths                                 ; based on their 8 neighboring patches.
+    ]
+    output-print "Tsunami Data Loaded"
+  ][                                                          ; if there is no tsunami data provided, write the coordinates of the patches into a file for the user to use and provide the water depth information
+    set file_name "tsunami_inundation/coordinates.csv"
+    if file-exists? file_name [file-delete file_name]         ; if there already is a file, delete it and make a new one
+    file-open file_name
+    ask patches [                                             ; write the coordinates of the patches in the file
+      file-print csv:to-row (list ((pxcor - min-pxcor) * patch_to_meter + min_lon)    ; transforming pxcor to longitude
+                                  ((pycor - min-pycor) * patch_to_meter + min_lat))   ; transforming pycor to latitude
+    ]
+    file-close
+    output-print "No Tsunami Data Provided! Coordinates were saved."
+  ]
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;; BREAK LINKS ;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; removes both directions of a link with a mouse click to the mid point of the link
+to break-links
+  let mouse-is-down? mouse-down?
+  if mouse-clicked? and timer > 0.1 [
+    reset-timer
+    let lnk min-one-of roads [(mouse-xcor - mid-x) ^ 2 + (mouse-ycor - mid-y) ^ 2]
+    let ints sort [both-ends] of lnk
+    if is-link? road [who] of item 0 ints [who] of item 1 ints [
+      ask road [who] of item 0 ints [who] of item 1 ints [die]
+    ]
+    if is-link? road [who] of item 1 ints [who] of item 0 ints [
+      ask road [who] of item 1 ints [who] of item 0 ints [die]
+    ]
+    display
+  ]
+  set mouse-was-down? mouse-is-down?
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;; PICK VERTICAL SHELTERS ;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; turns an intersection into a vertical evacuation shelter with a mouse click
+to pick-verticals
+  let mouse-is-down? mouse-down?
+  if mouse-clicked? [
+    ask min-one-of intersections [distancexy mouse-xcor mouse-ycor][
+      set shelter? true
+      set shelter_type "Ver"
+      set shape "circle"
+      set size 2
+      set color violet
+    ]
+    display
+  ]
+  set mouse-was-down? mouse-is-down?
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;; LOAD POPULATION ;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; loads the evacuees from "population_distribution" gis files that are located under "population_distribution" directroy
+; this gis shapefile contains the coordinates of the evacuees at the start of the evacuation
+to load-population
+  ; remove any residents, cars, or pedestrians before loading the population
+  ask residents [ die ]
+  ask pedestrians [die]
+  ask cars [die]
+  ; start loading the population
+  foreach gis:feature-list-of population_distribution [ i ->           ; iterate through the points in the features
+    foreach gis:vertex-lists-of i [ j ->
+      foreach j [ k ->
+        if length ( gis:location-of k ) = 2 [                          ; check if the vertex has both x and y
+          let x item 0 gis:location-of k
+          let y item 1 gis:location-of k
+          create-residents 1 [                                         ; create the agent
+            set xcor x
+            set ycor y
+            set color brown
+            set shape "dot"
+            set size 1
+            set moving? false                                          ; they agents are staionary at the beginning, before they start the evacuation
+            set init_dest min-one-of intersections [ distance myself ] ; the first intersection an agent moves toward to
+                                                                       ; to get to the transpotation network
+            set speed random-normal Ped_Speed Ped_Sigma                ; walking speed is randomly drawn from a normal distribution
+            set speed speed / fd_to_ftps                               ; turning ft/s to patch/tick
+            if speed < 0.001 [set speed 0.001]                         ; if speed is too low, set it to very small non-zero value
+            set evacuated? false                                       ; initialized as not evacuated
+            set dead? false                                            ; initialized as not dead
+            set reached? false                                         ; initialized as not reached the transportation network
+            make-decision                                              ; sets the evacuation mode and shelter decision and the corresponding milling time
+            if immediate_evacuation [                                  ; if immediate_evacuation is toggled on, set all the milling times to 0
+              set miltime 0
+            ]
+          ]
+        ]
+      ]
+    ]
+  ]
+  output-print "Population Loaded"
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;; LOAD ROUTES ;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; calcualtes routes for the intersections that need the shortest path information to a shelter, not all the intersections
+to load-routes
+  let origins find-origins
+  ask turtles with [member? self origins] [
+    let goals intersections with [shelter? and shelter_type = "Hor"]
+    set hor-path Astar self (min-one-of goals [distance myself]) goals ; hor-path definitely goes to a horizontal shelter
+    set goals intersections with [shelter?]
+    set ver-path Astar self (min-one-of goals [distance myself]) goals ; ver-path can go to either a vertical shelter or
+                                                                       ; a horizontal shelter, depending on which one was closer
+  ]
+  output-print "Routes Calculated"
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;; LOAD 1/2 ;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; first part of loading the model, including transportation network, shelters, and tsunami data
+; before breaking roads and adding vertical shelters
+to load1
+  ca
+  ask patches [set pcolor white]
+  set ev_times []
+  read-gis-files
+  load-network
+  load-shelters
+  load-tsunami
+  reset-timer
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;; LOAD 2/2 ;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; second part of loading the model, including population distribution and the routes
+; after breaking the roads and adding the vertical shelters
+; calculating roads is based on the vertical shelters and current state of the roads
+to load2
+  load-population
+  load-routes
+  reset-ticks
+end
+
+;######################################
+;*************************************#
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;*#
+;;;;;;;;;;;;;    GO    ;;;;;;;;;;;;;;*#
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;*#
+;*************************************#
+;######################################
 
 to go
-  if ticks >= 3600 [
-    ask cars with [color != red][
-      set color green
-      set speed 0
+  if ticks >= int(3600 / tick_to_sec) [   ; stop after simulating an hour
+    ask cars with [color != red][         ; and mark whoever is not in the shelter but neither is caught by tsunami, as evacuated
+      mark-evacuated
     ]
     ask pedestrians with [color != red][
-      set color green
+      mark-evacuated
     ]
     ask residents with [color != red][
-      set color green
+      mark-evacuated
     ]
     stop
   ]
-  
-  if ticks mod 30 = 0 [
+  ; update the tsunami depth every 30 seconds
+  if int(ticks * tick_to_sec) mod 30 = 0 [
     ask patches with [depths != 0][
-      set depth item int(ticks / 30) depths
-      if depth > max_depth [
+      set depth item int(ticks * tick_to_sec / 30) depths   ; set the depth to the correct item of depths list (depending on the time)
+      if depth > max_depth [                                ; monitor the maximum depth observed at each patch, for future use.
         set max_depth depth
       ]
     ]
-    
+    ; recolor the patches based on the tsunami depth, the deeper the darker the shade of blue
     ask patches [
       let cl 99.9 - depth
       if cl < 90 [set cl 90]
       if cl > 99.9 [set cl 99.9]
       set pcolor cl
     ]
-  ]  
-  
-  ask residents with [(moving? = true) and (decision != 0) and (miltime <= ticks)]
-  [
-    set heading towards gll
-    ifelse (distance gll < (speed) ) [set fd-speed distance gll][set fd-speed speed]
-    fd fd-speed
-    if (distance gll < 0.0005 )
-    [
-      move-to gll
-      set moving? false
-      set rchd? true
-      set origin gll
-      if [depth] of patch-here >= Hc and evacuated? = false [
-        set color red
-        set moving? 0
-        set evacuated? true
-      ]
-    ]
   ]
-  
-  
-  ask residents with [ rchd? = false and evacuated? = false]
-  [
-    if [depth] of patch-here > Hc [
-      set color red
-      set moving? 0
-      set evacuated? true
-    ]
-  ]
-  
 
-  
-  ask residents with [ rchd? = true ]
-  [
-    if decision = 1 [
-      ; horizontal evacuation - by foot
-      ask origin [
-        set speed [speed] of myself
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;;;;;;;;; RESIDENTS ;;;;;;;;
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+  ; ask residents, if they milling time has passed, to start moving
+  ask residents with [not moving? and not dead? and miltime <= ticks][
+    set heading towards init_dest
+    set moving? true
+  ]
+  ; ask residents that should be moving to move
+  ask residents with [moving?][
+    ifelse (distance init_dest < (speed) ) [fd distance init_dest][fd speed]
+    if distance init_dest < 0.005 [   ; if close enough to the next intersection, move the agent to it
+      move-to init_dest
+      set moving? false
+      set reached? true
+      set current_int init_dest
+    ]
+  ]
+  ; check the residnet that are on the way if they have been caught by the tsunami
+  ask residents with [not reached?][
+    if [depth] of patch-here > Hc [mark-dead]
+  ]
+  ; ask residets who have reached the network to hatch into a pedestrian or a car depending on their decision
+  ask residents with [reached?][
+    let spd speed                ; to pass on the spd from resident to the hatched pedestrian
+    let dcsn decision            ; to pass on the decision from the resident to either car or pedestrian
+    if dcsn = 1 or dcsn = 3 [    ; horizontal (1) or vertical (3) evacuation - by FOOT
+      ask current_int [          ; ask the current intersection of the resident to hatch a pedestrian
         hatch-pedestrians 1 [
-          set color orange
           set size 1
           set shape "dot"
-          set origin myself
-          set speed [speed] of myself
-          set path [hor-path] of myself
-          set prev-origin origin
-          set evacuated? false
-          set moving? false
-          ifelse empty? path [
-            set goal -1
+          set current_int myself ; myself = current_int of the resident
+          set speed spd          ; the speed of the resident is passed on to the pedestrian
+          set evacuated? false   ; initialized as not evacuated, will be checked immediately after being born
+          set dead? false        ; initialized as not dead, will be checked immediately after being born
+          set moving? false      ; initialized as not moving, will start moving immediately after if not evacuated and not dead
+          if dcsn = 1 [          ; horizontal evacuation on foot
+            set color orange
+            set path [hor-path] of myself ; myself = current_int of the resident - Note that intersection hold the path infomration
+                                          ; which passed to the pedestrians and cars
+            set decision 1
           ]
-          [
-            set goal last path
+          if dcsn = 3 [          ; vertical evacuation on foot
+            set color turquoise
+            set path [ver-path] of myself ; myself = current_int of the resident - Note that intersection hold the path infomration
+                                          ; which passed to the pedestrians and cars
+            set decision 3
           ]
-          set tr-type "rs"
-          set decision 1
+          ifelse empty? path [set shelter -1][set shelter last path] ; if path list is not empty the who of the shelter is the last item of the path
+                                                                     ; otherwise, there is no shelter destination, either the current_int is the shelter
+                                                                     ; or due to network disconnectivity, there were no path available to any of the shelters
+          if shelter = -1 [
+            if decision = 1 and [shelter_type] of current_int = "Hor" [set shelter -99]  ; if the decision is horizontal evac and the list is empty since current_int is a horizontal shelter
+            if decision = 3 and [shelter?] of current_int [set shelter -99]              ; if the decision is vertical evac and the list is empty since current_int is a shelter
+                                                                                         ; basically if shelter = -99, we can mark the pedestrian as evacuated later
+          ]
           st
         ]
       ]
     ]
-    
-    if decision = 3 [
-      ; vertical evacuation - by foot
-      ask origin [
-        set speed [speed] of myself
-        hatch-pedestrians 1 [
-          set color brown
+    if dcsn = 2 or dcsn = 4 [   ; horizontal (2) or vertical (4) evacuation - by CAR
+      ask current_int [         ; ask the current intersection of the resident to hatch a car
+        hatch-cars 1 [
           set size 1
-          set shape "dot"
-          set origin myself
-          set speed [speed] of myself
-          set path [ver-path] of myself
-          set prev-origin origin
-          set evacuated? false
-          set moving? false
-          ifelse empty? path [
-            set goal -1
+          set current_int myself ; myself = current_int of the resident
+          set evacuated? false   ; initialized as not evacuated, will be checked immediately after being born
+          set dead? false        ; initialized as not dead, will be checked immediately after being born
+          set moving? false      ; initialized as not moving, will start moving immediately after if not evacuated and not dead
+          if dcsn = 2 [          ; horizontal evacuation by car
+            set color sky
+            set path [hor-path] of myself ; myself = current_int of the resident
+            set decision 2
           ]
-          [
-            set goal last path
+          if dcsn = 4 [          ; vertical evacuation by car
+            set color magenta
+            set path [ver-path] of myself ; myself = current_int of the resident
+            set decision 4
           ]
-          set tr-type "rs"
-          set decision 3
+          ifelse empty? path [set shelter -1][set shelter last path]       ; if path list is not empty the who of the shelter is the last item of the path
+          if shelter = -1 [
+            if decision = 2 and [shelter_type] of current_int = "Hor" [set shelter -99] ; if the decision is horizontal evac and the list is empty since current_int is a horizontal shelter
+            if decision = 4 and [shelter?] of current_int [set shelter -99]             ; if the decision is vertical evac and the list is empty since current_int is a shelter
+                                                                                        ; basically if shelter = -99, we can mark the car as evacuated later
+          ]
           st
         ]
       ]
     ]
-    
-
-    if decision = 2 [
-      ; Hor evacuation - by car
-      ask origin [
-        hatch-cars 1 [
-          set color sky
-          set size 0.8
-          set shape "default"
-          set origin myself
-          set path [hor-path] of myself
-          set prev-origin origin
-          set evacuated? false
-          set moving? false
-          ifelse empty? path [
-            set goal -1
-          ]
-          [
-            set goal last path
-          ]
-          set tr-type "rs"
-          set decision 2
-          st
-        ]
-      ]
-    ]
-
-    if decision = 4 [
-      ; vertical evacuation - by car
-      ask origin [
-        hatch-cars 1 [
-          set color magenta
-          set size 0.8
-          set shape "default"
-          set origin myself
-          set path [ver-path] of myself
-          set prev-origin origin
-          set evacuated? false
-          set moving? false
-          ifelse empty? path [
-            set goal -1
-          ]
-          [
-            set goal last path
-          ]
-          set tr-type "rs"
-          set decision 4
-          st
-        ]
-      ]
-    ]
-    
-  die
+    die
   ]
-  
-  
-  
-;;  Cars:
-  ask cars
-  [
-   if [who] of origin = goal or goal = -1
-   ;if [gate?] of origin
-      [
-        set color green
-        set speed 0
-        set moving? 0
-        set evacuated? true
-        set ev-times lput ( ticks / 60 ) ev-times
-      ]
-   if [depth] of patch-here >= Hc and evacuated? = false [
-        set color red
-        set moving? 0
-        set speed 0
-        set evacuated? true
-    ]
+
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;;;;;;; PEDESTRIANS ;;;;;;;;
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+  ; check the pedestrians if they have evacuated already or died
+  ask pedestrians with [not evacuated? and not dead?][
+    if [who] of current_int = shelter or shelter = -99 [mark-evacuated]
+    if [depth] of patch-here >= Hc [mark-dead]
   ]
-  ask cars with [ ( moving? = false) and path != []]
-  [  
-    let dest item 0 path
-    ifelse length path > 1 [  
-      set next-destination intersection item 1 path
-    ]
-    [
-      set next-destination "false"
-    ]
-    set path remove dest path
-    set destination intersection dest
-    set heading towards destination
+  ; set up the pedestrians that should move
+  ask pedestrians with [not moving? and not empty? path and not evacuated? and not dead?][
+    set next_int intersection item 0 path   ; assign item 0 of path to next_int
+    set path remove-item 0 path             ; remove item 0 of path
+    set heading towards next_int            ; set the heading towards the destination
     set moving? true
-    set road-on road ([who] of destination) ([who] of origin)
-    ask road-on
-    [
-      set traffic traffic + 1
-      set usage usage + 1
-    ]
+    ask road ([who] of current_int) ([who] of next_int)[set crowd crowd + 1] ; add the crowd of the road the pedestrian will be on
   ]
-  
-  ask cars with [moving? = true]
-  [
-    move-gm
-    fd speed
-    if (distance destination < 0.005 )
-    [
+  ; move the pedestrians that should move
+  ask pedestrians with [moving?][
+    ifelse speed > distance next_int [fd distance next_int][fd speed] ; move the pedestrian towards the next intersection
+    if (distance next_int < 0.005 ) [                                 ; if close enough check if evacuated? dead? if neither, get ready for the next step
       set moving? false
-      ask road-on
-      [
-        set traffic traffic - 1
-      ]
-      set prev-origin origin
-      set origin destination
-      
-      if [who] of origin = goal or goal = -1
-      [
-        set color green
-        set speed 0
-        set moving? 0
-        set evacuated? true
-        set ev-times lput ( ticks / 60 ) ev-times
-      ]
-      if [depth] of patch-here >= Hc and evacuated? = false [
-        set color red
-        set moving? 0
-        set evacuated? true
-        set speed 0
-      ]
+      ask road ([who] of current_int) ([who] of next_int)[set crowd crowd - 1] ; decrease the crowd of the road the pedestrian was on
+      set current_int next_int                                                 ; update current intersection
+      if [who] of current_int = shelter [mark-evacuated]
+      if [depth] of patch-here >= Hc and not evacuated? [mark-dead]
     ]
   ]
 
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;;;;;;;;;;; CARS ;;;;;;;;;;;
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-  ;;Pedestrians:
-  ask pedestrians with [evacuated? = false]
-  [
-    if [who] of origin = goal or goal = -1
-    [
-      set color green
-      set moving? 0
-      set evacuated? true
-      set ev-times lput ( ticks / 60 ) ev-times
-    ]
-    if [depth] of patch-here >= Hc [
-        set color red
-        set moving? 0
-        set evacuated? true
-    ]
+  ; check the cars if they have evacuated already or died
+  ask cars with [not evacuated? and not dead?][
+    if [who] of current_int = shelter or shelter = -99 [mark-evacuated]
+    if [depth] of patch-here >= Hc [mark-dead]
   ]
-  
-  
-  ask pedestrians with [ ( moving? = false) and path != []]
-  [
-    let dest item 0 path
-    set path remove dest path
-    set destination intersection dest
-    set heading towards destination
+  ; set up the cars that should move
+  ask cars with [not moving? and not empty? path and not evacuated? and not dead?][
+    set next_int intersection item 0 path   ; assign item 0 of path to next_int
+    set path remove-item 0 path             ; remove item 0 of path
+    set heading towards next_int            ; set the heading towards the destination
     set moving? true
-    ask road ([who] of destination) ([who] of origin)
-    [
-      set crowd crowd + 1
-      set usage usage + 1
-    ]
+    ask road ([who] of current_int) ([who] of next_int)[set traffic traffic + 1] ; add the traffic of the road the car will be on
   ]
-  
-  
-  ask pedestrians with [moving? = true]
-  [
-    ifelse speed > distance destination [set fd-speed distance destination][set fd-speed speed]
-    fd fd-speed
-    if (distance destination < 0.0005 )
-    [
+  ; move the cars that should move
+  ask cars with [moving?][
+    move-gm                 ; set the speed with general motors car-following model
+    fd speed                ; move
+    if (distance next_int < 0.005 ) [    ; if close enough check if evacuated? dead? if neither, get ready for the next step
       set moving? false
-      set prev-origin origin
-      set origin destination
-      if [who] of origin = goal or goal = -1
-      [
-        set color green
-        set moving? 0
-        set evacuated? true
-        set ev-times lput ( ticks / 60 ) ev-times
-      ]
-      if [depth] of patch-here >= Hc and evacuated? = false [
-        set color red
-        set moving? 0
-        set evacuated? true
-      ]
+      ask road ([who] of current_int) ([who] of next_int)[set traffic traffic - 1] ; decrease the traffic of the road the pedestrian was on
+      set current_int next_int           ; update current intersection
+      if [who] of current_int = shelter [mark-evacuated]
+      if [depth] of patch-here >= Hc and not evacuated? [mark-dead]
     ]
   ]
-  tick  
+  tick
 end
-  
-  
 @#$#@#$#@
 GRAPHICS-WINDOW
 230
 10
-954
-755
-50
-50
-7.07
+980
+761
+-1
+-1
+7.35
 1
 10
 1
@@ -989,10 +917,10 @@ ticks
 30.0
 
 PLOT
-968
-452
-1417
-743
+995
+319
+1419
+499
 Number of Evacuated
 Min
 #
@@ -1004,24 +932,26 @@ true
 true
 "" ""
 PENS
-"Evacuated" 1.0 0 -10899396 true "" "plotxy (ticks / 60) (count pedestrians with [color = green])"
+"Evacuated" 1.0 0 -10899396 true "" "plotxy (ticks / 60) (count turtles with [ color = green ])"
+"Cars" 1.0 0 -13345367 true "" "plotxy (ticks / 60) (count cars with [ color = green ])"
+"Pedestrians" 1.0 0 -14835848 true "" "plotxy (ticks / 60) (count pedestrians with [ color = green ])"
 
 SWITCH
-9
+69
 10
-222
+223
 43
-immediate-evacuation
-immediate-evacuation
+immediate_evacuation
+immediate_evacuation
 1
 1
 -1000
 
 BUTTON
-1311
-13
-1389
-46
+1343
+14
+1422
+47
 GO
 go
 T
@@ -1035,42 +965,42 @@ NIL
 1
 
 TEXTBOX
-15
-107
-224
-135
+14
+54
+223
+82
 Residents' Decision Making Probabalisties : (Percent)
 11
 0.0
 1
 
 INPUTBOX
+11
+94
 112
-137
-213
-197
-R1-HorEvac-Foot
-25
+154
+R1_HorEvac_Foot
+25.0
 1
 0
 Number
 
 INPUTBOX
-9
-137
-105
-197
-R3-VerEvac-Foot
-25
+11
+158
+112
+218
+R3_VerEvac_Foot
+25.0
 1
 0
 Number
 
 MONITOR
-970
-75
-1052
-120
+995
+63
+1077
+108
 Time (min)
 ticks / 60
 1
@@ -1078,10 +1008,10 @@ ticks / 60
 11
 
 INPUTBOX
-139
-278
-210
-338
+148
+222
+219
+282
 Hc
 0.5
 1
@@ -1089,10 +1019,10 @@ Hc
 Number
 
 PLOT
-971
-143
-1417
-434
+995
+116
+1420
+312
 Number of Casualties
 Min
 #
@@ -1105,14 +1035,16 @@ true
 "" ""
 PENS
 "Dead" 1.0 0 -2674135 true "" "plotxy (ticks / 60) (count turtles with [color = red])"
+"Cars" 1.0 0 -5825686 true "" "plotxy (ticks / 60) (count cars with [color = red])"
+"Pedestrians" 1.0 0 -955883 true "" "plotxy (ticks / 60) (count pedestrians with [color = red] + count residents with [color = red])"
 
 BUTTON
-970
-12
-1085
-45
+995
+16
+1071
+49
 READ (1/2)
-pre-read
+load1\noutput-print \"READ (1/2) DONE!\"\nbeep
 NIL
 1
 T
@@ -1124,31 +1056,31 @@ NIL
 1
 
 TEXTBOX
-18
-283
-134
-301
+27
+227
+143
+245
 Critical Depth: (Meters)
 11
 0.0
 1
 
 INPUTBOX
-120
-639
-170
-699
+9
+582
+59
+642
 Rtau1
-0
+10.0
 1
 0
 Number
 
 INPUTBOX
-170
-639
-220
-699
+59
+582
+109
+642
 Rsig1
 1.65
 1
@@ -1156,21 +1088,21 @@ Rsig1
 Number
 
 INPUTBOX
-16
-637
-66
-697
+10
+646
+60
+706
 Rtau3
-0
+10.0
 1
 0
 Number
 
 INPUTBOX
-65
-637
-115
-697
+59
+646
+109
+706
 Rsig3
 1.65
 1
@@ -1178,52 +1110,52 @@ Rsig3
 Number
 
 TEXTBOX
-10
-614
-199
-642
+18
+555
+207
+583
 Evacuation Decsion Making Times:
 11
 0.0
 1
 
 TEXTBOX
-13
-341
-62
-369
+22
+285
+71
+313
 On foot: (ft/s)
 11
 0.0
 1
 
 INPUTBOX
-62
-343
-132
-403
-Ped-Speed
-3
+71
+287
+141
+347
+Ped_Speed
+4.0
 1
 0
 Number
 
 INPUTBOX
-139
-343
-210
-403
-Ped-Sigma
+148
+287
+219
+347
+Ped_Sigma
 0.65
 1
 0
 Number
 
 MONITOR
-1058
-75
-1140
-120
+1083
+63
+1165
+108
 Evacuated
 count turtles with [ color = green ]
 17
@@ -1231,10 +1163,10 @@ count turtles with [ color = green ]
 11
 
 MONITOR
-1149
-75
-1226
-120
+1174
+63
+1251
+108
 Casualty
 count turtles with [ color = red ]
 17
@@ -1242,33 +1174,23 @@ count turtles with [ color = red ]
 11
 
 MONITOR
-1236
-75
-1311
-120
+1261
+63
+1336
+108
 Mortality (%)
 count turtles with [color = red] / (count residents + count pedestrians + count cars) * 100
 2
 1
 11
 
-CHOOSER
-9
-51
-221
-96
-tsunami-case
-tsunami-case
-"500yrs" "1000yrs" "2500yrs"
-2
-
 BUTTON
-1208
+1272
 14
-1300
+1338
 47
 Read (2/2)
-read-all\nroutes\nfinish-routes
+load2\noutput-print \"READ (2/2) DONE!\"\nbeep
 NIL
 1
 T
@@ -1280,10 +1202,10 @@ NIL
 1
 
 BUTTON
-1094
-13
-1204
-46
+1171
+14
+1267
+47
 Place Verticals
 pick-verticals
 T
@@ -1297,54 +1219,54 @@ NIL
 1
 
 MONITOR
-1317
-74
-1396
-119
+1342
+62
+1421
+107
 Vertical Cap
-count turtles with [color = green and distance one-of intersections with [gate? and gate-type = \"Ver\"] < 0.01]
+sum [evacuee_count] of intersections with [shelter? and shelter_type = \"Ver\"]
 17
 1
 11
 
 INPUTBOX
-112
-202
-213
-262
-R2-HorEvac-Car
-25
+119
+94
+219
+154
+R2_HorEvac_Car
+25.0
 1
 0
 Number
 
 INPUTBOX
-9
-202
-105
-262
-R4-VerEvac-Car
-25
+119
+158
+219
+218
+R4_VerEvac_Car
+25.0
 1
 0
 Number
 
 INPUTBOX
-120
-703
-170
-763
+116
+582
+166
+642
 Rtau2
-0
+10.0
 1
 0
 Number
 
 INPUTBOX
-170
-703
-220
-763
+166
+582
+216
+642
 Rsig2
 1.65
 1
@@ -1352,21 +1274,21 @@ Rsig2
 Number
 
 INPUTBOX
-15
-702
-65
-762
+117
+647
+167
+707
 Rtau4
-0
+10.0
 1
 0
 Number
 
 INPUTBOX
-65
-702
-115
-762
+165
+647
+215
+707
 Rsig4
 1.65
 1
@@ -1374,53 +1296,63 @@ Rsig4
 Number
 
 INPUTBOX
-63
-407
-130
-467
-Max-Speed
-35
+72
+354
+143
+414
+max_speed
+35.0
 1
 0
 Number
 
 TEXTBOX
-13
-411
-54
-446
-By Car: (mph)
+20
+355
+60
+383
+by car:\n(mph)
 11
 0.0
 1
 
 INPUTBOX
-63
-470
-135
-530
-Acceleration
-5
+71
+418
+144
+478
+acceleration
+5.0
 1
 0
 Number
 
 INPUTBOX
-138
-471
-202
-531
-Deceleration
-25
+147
+418
+222
+478
+deceleration
+25.0
 1
 0
 Number
 
+TEXTBOX
+18
+429
+61
+447
+(ft/s^2)
+11
+0.0
+1
+
 INPUTBOX
-64
-535
-115
-595
+71
+484
+144
+544
 alpha
 0.14
 1
@@ -1428,48 +1360,70 @@ alpha
 Number
 
 TEXTBOX
-12
-490
-52
-508
-(ft/s^2)
-11
-0.0
-1
-
-TEXTBOX
-11
-559
-61
-577
+14
+493
+62
+511
 (mi^2/hr)
 11
 0.0
 1
 
+BUTTON
+1077
+15
+1165
+48
+Break Links
+break-links
+T
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+10
+11
+65
+44
+Initialize
+setup-init-val
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+PLOT
+996
+508
+1419
+762
+Evacuation Time Histogram
+Minutes (after the earthquake)
+#
+0.0
+10.0
+0.0
+10.0
+true
+true
+"" ""
+PENS
+"Histogram" 1.0 1 -16777216 true "set-plot-x-range 0 60\nset-plot-y-range 0 count turtles with [ color = green ]\nset-histogram-num-bars 60\nset-plot-pen-mode 1 ; bar mode" "histogram ev_times"
+"Mean" 1.0 0 -10899396 true "set-plot-pen-mode 0 ; line mode" "plot-pen-reset\nplot-pen-up\nplotxy mean ev_times 0\nplot-pen-down\nplotxy mean ev_times plot-y-max"
+"Median" 1.0 0 -2674135 true "set-plot-pen-mode 0 ; line mode" "plot-pen-reset\nplot-pen-up\nplotxy median ev_times 0\nplot-pen-down\nplotxy median ev_times plot-y-max"
+
 @#$#@#$#@
-## WHAT IS IT?
-
-
-
-## HOW IT WORKS
-
-
-## HOW TO USE IT
-
-
-
-## EXTENDING THE MODEL
-
-
-## NETLOGO FEATURES
-
-
-
-## RELATED MODELS
-
-
-## CREDITS AND REFERENCES
 @#$#@#$#@
 default
 true
@@ -1752,43 +1706,62 @@ false
 0
 Polygon -7500403 true true 270 75 225 30 30 225 75 270
 Polygon -7500403 true true 30 75 75 30 270 225 225 270
-
 @#$#@#$#@
-NetLogo 5.1.0
+NetLogo 6.0.4
 @#$#@#$#@
 @#$#@#$#@
 @#$#@#$#@
 <experiments>
-  <experiment name="Decision Making Time - Existing Plan" repetitions="10" runMetricsEveryStep="false">
-    <setup>Reset</setup>
+  <experiment name="Exp" repetitions="5" runMetricsEveryStep="false">
+    <setup>pre-read
+turn-vertical intersection vertical_shelter_num
+read-all</setup>
     <go>go</go>
-    <metric>N_000</metric>
-    <metric>N_001</metric>
-    <metric>N_010</metric>
-    <metric>N_011</metric>
-    <metric>N_020</metric>
-    <metric>N_021</metric>
-    <metric>N_030</metric>
-    <metric>N_031</metric>
-    <metric>N_100</metric>
-    <metric>N_101</metric>
-    <metric>N_110</metric>
-    <metric>N_111</metric>
-    <metric>N_120</metric>
-    <metric>N_121</metric>
-    <metric>N_130</metric>
-    <metric>N_131</metric>
-    <enumeratedValueSet variable="Alternative-Plan-Mode">
-      <value value="true"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="acceleration">
-      <value value="0.0099"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="deceleration">
-      <value value="0.0010"/>
+    <metric>count turtles with [color = red] / (count residents + count pedestrians) * 100</metric>
+    <metric>count turtles with [color = green and distance one-of intersections with [gate? and gate-type = "Ver"] &lt; 0.01]</metric>
+    <enumeratedValueSet variable="tsunami-case">
+      <value value="&quot;250yrs&quot;"/>
+      <value value="&quot;500yrs&quot;"/>
+      <value value="&quot;1000yrs&quot;"/>
+      <value value="&quot;2500yrs&quot;"/>
+      <value value="&quot;5000yrs&quot;"/>
+      <value value="&quot;10000yrs&quot;"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="immediate-evacuation">
       <value value="false"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="Hc">
+      <value value="0.5"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="R3-VerEvac-Foot">
+      <value value="50"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="Ped-Speed">
+      <value value="4"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="Ped-Sigma">
+      <value value="0.65"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="Rtau3">
+      <value value="0"/>
+      <value value="1"/>
+      <value value="2"/>
+      <value value="3"/>
+      <value value="4"/>
+      <value value="5"/>
+      <value value="6"/>
+      <value value="7"/>
+      <value value="8"/>
+      <value value="9"/>
+      <value value="10"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="Rsig3">
+      <value value="1.65"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="vertical_shelter_num">
+      <value value="82"/>
+      <value value="74"/>
+      <value value="486"/>
     </enumeratedValueSet>
   </experiment>
 </experiments>
@@ -1804,7 +1777,6 @@ true
 0
 Line -7500403 true 150 150 90 180
 Line -7500403 true 150 150 210 180
-
 @#$#@#$#@
 0
 @#$#@#$#@
