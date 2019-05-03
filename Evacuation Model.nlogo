@@ -280,11 +280,11 @@ end
 ; TURTLE FUNCTION: calculates the speed of the car based on general motors car-following model
 ;                  it incorporates the speed of the leading car as well as the space headway
 to move-gm
-  set car_ahead cars in-cone (35 / patch_to_feet) 20                                         ; get the cars ahead in 35ft (almost half a block) and in field of view of 20 degrees
+  set car_ahead cars in-cone (150 / patch_to_feet) 20                                        ; get the cars ahead in 150ft (almost half a block) and in field of view of 20 degrees
   set car_ahead car_ahead with [self != myself]                                              ; that are not myself
   set car_ahead car_ahead with [not evacuated?]                                              ; that have not made it to the shelter yet (no congestion at the shelter)
-  set car_ahead car_ahead with [moving?]                                                     ; TODO: Test this
-  set car_ahead car_ahead with [ abs(subtract-headings heading [heading] of myself) < 160]   ; with relatively the same general heading as mine (not going the opposite direction)
+  set car_ahead car_ahead with [moving?]                                                     ; that are moving
+  set car_ahead car_ahead with [abs(subtract-headings heading [heading] of myself) < 160]    ; with relatively the same general heading as mine (not going the opposite direction)
   set car_ahead car_ahead with [distance myself > 0.0001]                                    ; not exteremely close to myself
   set car_ahead min-one-of car_ahead [distance myself]                                       ; and the closest car ahead
   ifelse is-turtle? car_ahead [                                                              ; if there IS a car ahead:
@@ -305,7 +305,7 @@ to move-gm
   ]
   [                                                                                          ; if ther IS NOT a car ahead:
     if speed < (max_speed / fd_to_mph) [set speed speed + (acceleration / fd_to_ftps * tick_to_sec)]
-                                                                                             ; accelerate to get to the speed limit ;; TODO: check
+                                                                                             ; accelerate to get to the speed limit
     if speed > max_speed / fd_to_mph [set speed max_speed / fd_to_mph]                       ; cap the speed to max speed if larger
   ]
 
@@ -707,18 +707,7 @@ end
 ;######################################
 
 to go
-  if ticks >= int(3600 / tick_to_sec) [   ; stop after simulating an hour
-    ask cars with [color != red][         ; and mark whoever is not in the shelter but neither is caught by tsunami, as evacuated
-      mark-evacuated
-    ]
-    ask pedestrians with [color != red][
-      mark-evacuated
-    ]
-    ask residents with [color != red][
-      mark-evacuated
-    ]
-    stop
-  ]
+  if ticks >= int(3600 / tick_to_sec) [stop]                ; stop after simulating an hour
   ; update the tsunami depth every 30 seconds
   if int(ticks * tick_to_sec) mod 30 = 0 [
     ask patches with [depths != 0][
@@ -918,7 +907,7 @@ ticks
 
 PLOT
 995
-319
+346
 1419
 499
 Number of Evacuated
@@ -997,10 +986,10 @@ R3_VerEvac_Foot
 Number
 
 MONITOR
-995
-63
-1077
-108
+1012
+57
+1094
+102
 Time (min)
 ticks / 60
 1
@@ -1019,10 +1008,10 @@ Hc
 Number
 
 PLOT
-995
-116
-1420
-312
+994
+162
+1419
+336
 Number of Casualties
 Min
 #
@@ -1152,10 +1141,10 @@ Ped_Sigma
 Number
 
 MONITOR
-1083
-63
-1165
-108
+1124
+58
+1206
+103
 Evacuated
 count turtles with [ color = green ]
 17
@@ -1163,10 +1152,10 @@ count turtles with [ color = green ]
 11
 
 MONITOR
-1174
-63
-1251
-108
+1215
+58
+1292
+103
 Casualty
 count turtles with [ color = red ]
 17
@@ -1174,10 +1163,10 @@ count turtles with [ color = red ]
 11
 
 MONITOR
-1261
-63
-1336
-108
+1216
+111
+1310
+156
 Mortality (%)
 count turtles with [color = red] / (count residents + count pedestrians + count cars) * 100
 2
@@ -1219,10 +1208,10 @@ NIL
 1
 
 MONITOR
-1342
-62
-1421
-107
+1318
+59
+1405
+104
 Vertical Cap
 sum [evacuee_count] of intersections with [shelter? and shelter_type = \"Ver\"]
 17
@@ -1422,6 +1411,17 @@ PENS
 "Histogram" 1.0 1 -16777216 true "set-plot-x-range 0 60\nset-plot-y-range 0 count turtles with [ color = green ]\nset-histogram-num-bars 60\nset-plot-pen-mode 1 ; bar mode" "histogram ev_times"
 "Mean" 1.0 0 -10899396 true "set-plot-pen-mode 0 ; line mode" "plot-pen-reset\nplot-pen-up\nplotxy mean ev_times 0\nplot-pen-down\nplotxy mean ev_times plot-y-max"
 "Median" 1.0 0 -2674135 true "set-plot-pen-mode 0 ; line mode" "plot-pen-reset\nplot-pen-up\nplotxy median ev_times 0\nplot-pen-down\nplotxy median ev_times plot-y-max"
+
+MONITOR
+1101
+111
+1207
+156
+Per Evacuated
+count turtles with [ color = green ] / (count residents + count pedestrians + count cars) * 100
+17
+1
+11
 
 @#$#@#$#@
 @#$#@#$#@
