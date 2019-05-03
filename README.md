@@ -29,15 +29,19 @@ Here is a brief instruction on how to run the model to simulate a near-field tsu
 * *Rtau(1/2/3/4)* and *Rsig(1/2/3/4)*: The Rayleigh distribution parameters, governing the delay of the evacuees in each group. If set to 10 and 1.65 respectively, it means that 99% of the people evacuate within 10 to 15 minutes after the initial disaster. The detailed explanation is documented [here](https://ir.library.oregonstate.edu/concern/graduate_thesis_or_dissertations/bv73c493x).
 
 2. Click on *READ(1/2)*
+
 ... You MUST click on this, and reload the model every time you change the parameters on the left panel. Otherwise your changes won't go into effect. This loads the transportation network, the evacuation shelters, and the hazard diffusion data.
 
 3. Click on *Break Links* (optional)
+
 ... Use the mouse and click on the middle point of the links you wish to break. Note that this removes both directions of travel on the link. After you are done, click on the button again to turn it off. You can skip this step if you do not want to simulate network damages.
 
 4. Click on *Place Verticals* (optional)
+
 ... Use your mouse and click on the intersections you want the vertical evacuation shelters to be placed at, and then click on the button one more time to turn it off. You can skip this step if you do not intend to model vertical evacuation. If so, please make sure that R3 and R4 percentages are set to zero.
     
 5. Click on *Read(2/2)*
+
 ... This loads the population distribution and calculates the routes for the evacuees to their closest shelter, depending on their preference and decision to evacuate either horizontally or vertically.
 
 6. *GO*
@@ -45,8 +49,9 @@ Here is a brief instruction on how to run the model to simulate a near-field tsu
 
 ## Snapshots
 
-![Snapshot 1 - t = 12 min](figs/snapshot_1.png?raw=true "Snapshot 1 - time = 6min")
-![Snapshot 2 - t = 44 min](figs/snapshot_2.png?raw=true "Snapshot 2 - time = 44min")
+![Snapshot 1 - t = 12 min](figs/snapshot1.png?raw=true "Snapshot 1 - time = 6min")
+![Snapshot 2 - t = 20 min](figs/snapshot2.png?raw=true "Snapshot 2 - time = 20min")
+![Snapshot 3 - t = 44 min](figs/snapshot3.png?raw=true "Snapshot 3 - time = 44min")
 
 ## How to use this model?
 
