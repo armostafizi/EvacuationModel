@@ -910,9 +910,9 @@ PLOT
 346
 1419
 499
-Number of Evacuated
+Percentage of Evacuated
 Min
-#
+%
 0.0
 10.0
 0.0
@@ -921,9 +921,9 @@ true
 true
 "" ""
 PENS
-"Evacuated" 1.0 0 -10899396 true "" "plotxy (ticks / 60) (count turtles with [ color = green ])"
-"Cars" 1.0 0 -13345367 true "" "plotxy (ticks / 60) (count cars with [ color = green ])"
-"Pedestrians" 1.0 0 -14835848 true "" "plotxy (ticks / 60) (count pedestrians with [ color = green ])"
+"Evacuated" 1.0 0 -10899396 true "" "plotxy (ticks / 60) (count turtles with [ color = green ] / (count residents + count pedestrians + count cars) * 100)"
+"Cars" 1.0 0 -13345367 true "" "plotxy (ticks / 60) (count cars with [ color = green ] / (count residents + count pedestrians + count cars) * 100)"
+"Pedestrians" 1.0 0 -14835848 true "" "plotxy (ticks / 60) (count pedestrians with [ color = green ] / (count residents + count pedestrians + count cars) * 100)"
 
 SWITCH
 69
@@ -1012,9 +1012,9 @@ PLOT
 162
 1419
 336
-Number of Casualties
+Percentage of Casualties
 Min
-#
+%
 0.0
 10.0
 0.0
@@ -1023,9 +1023,9 @@ true
 true
 "" ""
 PENS
-"Dead" 1.0 0 -2674135 true "" "plotxy (ticks / 60) (count turtles with [color = red])"
-"Cars" 1.0 0 -5825686 true "" "plotxy (ticks / 60) (count cars with [color = red])"
-"Pedestrians" 1.0 0 -955883 true "" "plotxy (ticks / 60) (count pedestrians with [color = red] + count residents with [color = red])"
+"Dead" 1.0 0 -2674135 true "" "plotxy (ticks / 60) (count turtles with [color = red] / (count residents + count pedestrians + count cars) * 100)"
+"Cars" 1.0 0 -5825686 true "" "plotxy (ticks / 60) (count cars with [color = red] / (count residents + count pedestrians + count cars) * 100)"
+"Pedestrians" 1.0 0 -955883 true "" "plotxy (ticks / 60) ((count pedestrians with [color = red] + count residents with [color = red]) / (count residents + count pedestrians + count cars) * 100)"
 
 BUTTON
 995
@@ -1413,13 +1413,13 @@ PENS
 "Median" 1.0 0 -2674135 true "set-plot-pen-mode 0 ; line mode" "plot-pen-reset\nplot-pen-up\nplotxy median ev_times 0\nplot-pen-down\nplotxy median ev_times plot-y-max"
 
 MONITOR
-1101
+1093
 111
-1207
+1209
 156
-Per Evacuated
+Per Evacuated (%)
 count turtles with [ color = green ] / (count residents + count pedestrians + count cars) * 100
-17
+1
 1
 11
 
