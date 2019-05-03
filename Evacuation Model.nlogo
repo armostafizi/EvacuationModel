@@ -144,23 +144,6 @@ globals [        ; global variables
 ;;;;;;;;;; HELPER FUNCTIONS ;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-to print-conv-ratios
-  print "1 ft = 0.0059043 patch"
-  print 1 / patch_to_feet
-
-  print "1 patch = 169.37 ft"
-  print patch_to_feet
-
-  print "1 ft/s = 0.0059043 fd"
-  print 1 / fd_to_ftps
-
-  print "1 mph = 0.008659637 fd"
-  print 1 / fd_to_mph
-
-  ;; xcor = (longitude + 123.92401) / 0.00066
-  ;; ycor = (latitude - 45.99305 ) / 0.00047
-end
-
 ; returns truen if the moouse was clicked
 to-report mouse-clicked?
   report (mouse-was-down? = true and not mouse-down?)
