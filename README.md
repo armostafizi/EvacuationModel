@@ -62,7 +62,7 @@ This model takes a few input in GIS and CSV format that can be easily modified f
 
 ## What can I learn from this model?
 
-There are a few directions that you can study with this model. The two main output of this model are (I) Evaucation Time Distribution (Figure \ref{evac_times}) and (II) Mortality Rate (Figure \ref{mortality_rate}) in case that the hazard information is provided. With these two outputs you can analyze,
+There are a few directions that you can study with this model. The two main output of this model are (I) Evaucation Time Distribution and (II) Mortality Rate (Figures below) in case that the hazard information is provided. With these two outputs you can analyze,
 
 1. Impacts of underlying parameters (e.g., evacuation mode choice, milling time, walking and driving speed, etc.) on the evaucation mortality rate or evacuation times, in order to see how and to what extent these variables change the mortality rate or the evaucation times.
 
@@ -72,7 +72,7 @@ There are a few directions that you can study with this model. The two main outp
 
 ...
 
-![Sample Evaucation Times](figs/ev_times.png)
+![Sample Evaucation Times](figs/evac_times.png)
 ![Evaucation Mortality Rate and Percentage of Evacuated](figs/mortality_rate.png)
 
 
