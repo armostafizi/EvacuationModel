@@ -49,9 +49,9 @@ Here is a brief instruction on how to run the model to simulate a near-field tsu
 
 ## Snapshots
 
-![Snapshot 1 - t = 12 min](figs/snapshot1.png?raw=true "Snapshot 1 - time = 6min")
-![Snapshot 2 - t = 20 min](figs/snapshot2.png?raw=true "Snapshot 2 - time = 20min")
-![Snapshot 3 - t = 44 min](figs/snapshot3.png?raw=true "Snapshot 3 - time = 44min")
+![Snapshot 1 - t = 12 min](snapshots/snapshot1.png?raw=true "Snapshot 1 - time = 6min")
+![Snapshot 2 - t = 20 min](snapshots/snapshot2.png?raw=true "Snapshot 2 - time = 20min")
+![Snapshot 3 - t = 44 min](snapshots/snapshot3.png?raw=true "Snapshot 3 - time = 44min")
 
 ## How to use this model?
 
@@ -77,8 +77,8 @@ There are a few directions that you can study with this model. The two main outp
 
 ...
 
-![Sample Evaucation Times](figs/evac_times.png)
-![Evaucation Mortality Rate and Percentage of Evacuated](figs/mortality_rate.png)
+![Sample Evaucation Times](snapshots/evac_times.png)
+![Evaucation Mortality Rate and Percentage of Evacuated](snapshots/mortality_rate.png)
 
 
 
