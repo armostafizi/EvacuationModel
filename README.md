@@ -57,7 +57,7 @@ Here is a brief instruction on how to run the model to simulate a near-field tsu
 
 This model takes a few input in GIS and CSV format that can be easily modified for your needs.
 
-1. *Transportation Network*: Transportation Network is read by the model from the GIS shapefiles that are in *transportation_network* directory. These shapefiles can be extracted from [OpenStreetMap.com] (https://openstreetmap.com) for the city of interest. Please refer to the [this](transportation_network/README.md) for specifics of these files.
+1. *Transportation Network*: Transportation Network is read by the model from the GIS shapefiles that are in *transportation_network* directory. These shapefiles can be extracted from [OpenStreetMap.com](https://openstreetmap.com) for the city of interest. Please refer to the [this](transportation_network/README.md) for specifics of these files.
 
 2. *Shelter Locations*: Shelter Locations are read by the model from GIS shapefiles that are in *shelter_locations* directoty. These shapefiles can be manually created as explained [here](shelter_locations/README.md) to pinpoint the intersections of the transportation network that can act as evacuation shelters.
 
