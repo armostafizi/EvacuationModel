@@ -34,18 +34,19 @@ You MUST click on this, and reload the model every time you change the parameter
 
 3. Click on *Break Links* (optional)
 
-... Use the mouse and click on the middle point of the links you wish to break. Note that this removes both directions of travel on the link. After you are done, click on the button again to turn it off. You can skip this step if you do not want to simulate network damages.
+Use the mouse and click on the middle point of the links you wish to break. Note that this removes both directions of travel on the link. After you are done, click on the button again to turn it off. You can skip this step if you do not want to simulate network damages.
 
 4. Click on *Place Verticals* (optional)
 
-... Use your mouse and click on the intersections you want the vertical evacuation shelters to be placed at, and then click on the button one more time to turn it off. You can skip this step if you do not intend to model vertical evacuation. If so, please make sure that R3 and R4 percentages are set to zero.
+Use your mouse and click on the intersections you want the vertical evacuation shelters to be placed at, and then click on the button one more time to turn it off. You can skip this step if you do not intend to model vertical evacuation. If so, please make sure that R3 and R4 percentages are set to zero.
     
 5. Click on *Read(2/2)*
 
-... This loads the population distribution and calculates the routes for the evacuees to their closest shelter, depending on their preference and decision to evacuate either horizontally or vertically.
+This loads the population distribution and calculates the routes for the evacuees to their closest shelter, depending on their preference and decision to evacuate either horizontally or vertically.
 
 6. *GO*
-... This will run the simulation for a one-hour period. Agents walk towards the transportation netwrok, depending on their preparation/milling time and their walking speed. Afterwards, they switch colors based on their decisions. Blue for the horizontal evacuation by car, purple for vertical evacuation by car, orange for horizontal evacuation by foot, and turquoise for vertical evacuation by foot. The agents will be considered evacuated when they reach their shelter, and they will be considered as mortalities if they die due to the hazard (in this case the tsunami inundation). Refer to [this](https://ir.library.oregonstate.edu/concern/graduate_thesis_or_dissertations/bv73c493x), [this](https://link.springer.com/article/10.1007/s11069-017-2927-y), and [this](https://www.sciencedirect.com/science/article/pii/S0968090X15004106) for thorough discussion on the simulated evacuation process. 
+
+This will run the simulation for a one-hour period. Agents walk towards the transportation netwrok, depending on their preparation/milling time and their walking speed. Afterwards, they switch colors based on their decisions. Blue for the horizontal evacuation by car, purple for vertical evacuation by car, orange for horizontal evacuation by foot, and turquoise for vertical evacuation by foot. The agents will be considered evacuated when they reach their shelter, and they will be considered as mortalities if they die due to the hazard (in this case the tsunami inundation). Refer to [this](https://ir.library.oregonstate.edu/concern/graduate_thesis_or_dissertations/bv73c493x), [this](https://link.springer.com/article/10.1007/s11069-017-2927-y), and [this](https://www.sciencedirect.com/science/article/pii/S0968090X15004106) for thorough discussion on the simulated evacuation process. 
 
 ## Snapshots
 
