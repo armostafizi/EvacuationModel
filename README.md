@@ -30,7 +30,7 @@ Here is a brief instruction on how to run the model to simulate a near-field tsu
 
 2. Click on *READ(1/2)*
 
-... You MUST click on this, and reload the model every time you change the parameters on the left panel. Otherwise your changes won't go into effect. This loads the transportation network, the evacuation shelters, and the hazard diffusion data.
+...You MUST click on this, and reload the model every time you change the parameters on the left panel. Otherwise your changes won't go into effect. This loads the transportation network, the evacuation shelters, and the hazard diffusion data.
 
 3. Click on *Break Links* (optional)
 
