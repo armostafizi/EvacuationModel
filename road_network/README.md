@@ -4,4 +4,4 @@ This directory contains the GIS files that have transportation network data. As 
 
 Please not that it is **crucial** to have the projection of all the GIS files, as well as the coordinates of the tsunami inundation file, in *meter* unit. I recommend **WGS 84 / UTM ZONE XXY** as the projection for all the GIS files, where XXY is the zone of your study site.
 
-![Transportation Network](../figs/road_network.png?raw=true "Road Network")
+![Transportation Network](road_network.png?raw=true "Road Network")
