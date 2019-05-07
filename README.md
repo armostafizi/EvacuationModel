@@ -58,7 +58,7 @@ This will run the simulation for a one-hour period. Agents walk towards the tran
 
 This model takes a few input in GIS and CSV format that can be easily modified for your needs.
 
-1. *Transportation Network*: Transportation Network is read by the model from the GIS shapefiles that are in *transportation_network* directory. These shapefiles can be extracted from [OpenStreetMap.com](https://openstreetmap.com) for the city of interest. Please refer to the [this](transportation_network/README.md) for specifics of these files.
+1. *Transportation Network*: Transportation Network is read by the model from the GIS shapefiles that are in *transportation_network* directory. These shapefiles can be extracted from [OpenStreetMap](https://www.openstreetmap.org) for the city of interest. Please refer to the [this](road_network/README.md) for specifics of these files.
 
 2. *Shelter Locations*: Shelter Locations are read by the model from GIS shapefiles that are in *shelter_locations* directoty. These shapefiles can be manually created as explained [here](shelter_locations/README.md) to pinpoint the intersections of the transportation network that can act as evacuation shelters.
 
