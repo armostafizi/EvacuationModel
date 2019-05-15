@@ -101,6 +101,10 @@ You can use, modify, adapt this model to your own needs. If you use this model t
 
 + Mostafizi, Alireza, et al. An Agent-Based Model of Vertical Tsunami Evacuation Behavior and Shelter Locations: A Multi-Criteria Decision-Making Problem. No. 18-06293. 2018.
 
+## Releases
+**First release**:
+[![DOI](https://zenodo.org/badge/122685849.svg)](https://zenodo.org/badge/latestdoi/122685849)
+
 ## Authors
 
 * **Alireza Mostafizi** - [armostafizi](https://github.com/armostafizi) / [alire.me](https://alire.me)
