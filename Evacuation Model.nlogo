@@ -281,6 +281,7 @@ to move-gm
   set car_ahead cars in-cone (150 / patch_to_feet) 20                                        ; get the cars ahead in 150ft (almost half a block) and in field of view of 20 degrees
   set car_ahead car_ahead with [self != myself]                                              ; that are not myself
   set car_ahead car_ahead with [not evacuated?]                                              ; that have not made it to the shelter yet (no congestion at the shelter)
+  set car_ahead car_ahead with [not dead?]                                                   ; that have not died yet
   set car_ahead car_ahead with [moving?]                                                     ; that are moving
   set car_ahead car_ahead with [abs(subtract-headings heading [heading] of myself) < 160]    ; with relatively the same general heading as mine (not going the opposite direction)
   set car_ahead car_ahead with [distance myself > 0.0001]                                    ; not exteremely close to myself
