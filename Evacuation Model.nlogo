@@ -57,6 +57,7 @@ residents-own [  ; the variables that residents own
                  ;                           4 for Ver Evac by Car
   miltime        ; the agents milling time (preparation time before the evacuation starts) referenced from the earthquake
                  ; measureed in seconds
+  time_in_water  ; time that the agent has been in the water in seconds
 ]
 
 roads-own [      ; the variables that roads own
@@ -92,6 +93,7 @@ pedestrians-own [; the variables that pedestrians own
   path           ; list of intersection 'who's that represent the path to the shelter of an agent
   decision       ; the agents decision code: 1 for Hor Evac on foot
                  ;                           3 for Ver Evac on foot
+  time_in_water  ; time that the agent has been in the water in seconds
 ]
 
 cars-own [       ; the variables that cars own
@@ -110,6 +112,7 @@ cars-own [       ; the variables that cars own
   speed_diff     ; the speed difference between the agent and 'car_ahead'
   acc            ; acceleration of the car agent
   road_on        ; the link that the car is travelling on
+  time_in_water  ; time that the agent has been in the water in seconds
 ]
 
 globals [        ; global variables
@@ -121,6 +124,18 @@ globals [        ; global variables
                  ; contains population distribution gis information
   shelter_locations
                  ; contains shelter locations gis information
+
+  tsunami_sample ; sample tsunami inundation wavefiled raster data
+
+  tsunami_data_inc   ; the increements in seconds for the inundation data
+  tsunami_data_start ; the start of the inundation data in seconds
+  tsunami_data_count ; count of inunudaiton files
+
+  tsunami_max_depth    ; maximum observed depth for color normalization
+  tsunami_min_depth    ; minimum observed depth for color normalization
+
+
+  mortality_rate ; mortality rate of the event
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;;;;;;;;; CONVERSION RATIOS ;;;;;;;;;
@@ -337,7 +352,8 @@ to setup-init-val
   set R2_HorEvac_Car 25           ; 25% of the agents evacuate horizontally with their car
   set R3_VerEvac_Foot 25          ; 25% of the agents evacuate on foot and are open to vertical evaucation if it is closer to them compared to a shelter outside the inundation zone
   set R4_VerEvac_Car 25           ; 25% of the agents evacuate with their car and are open to vertical evaucation if it is closer to them compared to a shelter outside the inundation zone
-  set Hc 0.5                      ; the critical wave height that marks the threshold of casualties is set to 0.5 meter
+  set Hc 1.0                      ; the critical wave height that marks the threshold of casualties is set to 1.0 meter
+  set Tc 120                      ; the time it takes for the inundation above Hc to kill an agent (seconds)
   set Ped_Speed 4                 ; the mean of the normal dist. that the walking speed of the agents are drawn from is set to 4 ft/s
   set Ped_Sigma 0.65              ; the standard deviation of the normal dist. that the walking speed of the agents are drawn from is set to 0.65 ft/s
   set max_speed 35                ; maximum driving speed is set to 35 mph
@@ -363,13 +379,15 @@ end
 ;   2. shelter_locations that contains the location of the horizontal and vertical shelters
 ;   3. population_distribution that contains the coordinates of the agents immediately before the evacuation
 to read-gis-files
-  gis:load-coordinate-system "road_network/road_network.prj"                                              ; load the projection system - WGS84 / UTM (METER) for your specific area
-  set shelter_locations gis:load-dataset "shelter_locations/shelter_locations.shp"                        ; read shelter locations
-  set road_network gis:load-dataset "road_network/road_network.shp"                                       ; read road network
-  set population_distribution gis:load-dataset "population_distribution/population_distribution.shp"      ; read population distribution
+  gis:load-coordinate-system "road_network/road_network.prj"                                          ; load the projection system - WGS84 / UTM (METER) for your specific area
+  set shelter_locations gis:load-dataset "shelter_locations/shelter_locations.shp"                    ; read shelter locations
+  set road_network gis:load-dataset "road_network/road_network.shp"                                   ; read road network
+  set population_distribution gis:load-dataset "population_distribution/population_distribution.shp"  ; read population distribution
+  set tsunami_sample gis:load-dataset "tsunami_inundation/sample.asc"                                 ; just a sample inunudation wavefield to get the envelope (TODO: can be fixed later)
   let world_envelope (gis:envelope-union-of (gis:envelope-of road_network)                                ; set the real world bounding box the union of all the read shapefiles
                                             (gis:envelope-of shelter_locations)
-                                            (gis:envelope-of population_distribution))
+                                            (gis:envelope-of population_distribution)
+                                            (gis:envelope-of tsunami_sample))
   let netlogo_envelope (list (min-pxcor + 1) (max-pxcor - 1) (min-pycor + 1) (max-pycor - 1))             ; read the size of netlogo world
   gis:set-transformation (world_envelope) (netlogo_envelope)                                              ; make the transformation from real world to netlogo world
   let world_width item 1 world_envelope - item 0 world_envelope                                           ; real world width in meters
@@ -482,7 +500,7 @@ to load-shelters
           ask min-one-of intersections [distancexy x y][   ; turn the closest intersection to (x,y) to a shelter
             set shelter? true
             set shape "circle"
-            set size 2
+            set size 4
             if curr_shelter_type = "hor" [                 ; assign proper type based on "curr_shelter_type"
               set shelter_type "Hor"
               set color yellow
@@ -504,48 +522,57 @@ end
 ;;;;;;;;; LOAD TSUNAMI DATA ;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-; loads the tsunami inundation data from the csv file "tsunami_inundation.csv" that is under "tsunami_inundation" directory
-; note that for the seaside model, you can replace the current inundation model (10,000 year return interval) with the other scenarios
-; located in "extra_cases" directory. You just have to replace and rename the file to "tsunami_inundation.csv"
-; if no tsunami data is provided, this function writes the coordinates that the user needs to provided the water depths for in "coordinates.csv"
+; loads the tsunami inundation data from the flowdepth raster files under "tsunami_inundation" directory
+; the details of inundation data (e.g., the increment, start, and data count) are read from "details.txt"
+; if no tsunami data is provided, this function writes the coordinate boundaries of the study area into
+; "coordinate_boundaries.txt" so it can be used to create the flowdepths later on.
+
 to load-tsunami
-  let file_name "tsunami_inundation/tsunami_inundation.csv" ; the filename that contains the inundation data
-  ifelse file-exists? file_name [                           ; if tsunami data is provided, read it
-    file-close-all
-    file-open file_name
-    while [ not file-at-end? ] [
-      let row csv:from-row file-read-line
-      let x item 0 row                                         ; the longitude of the point the tsunami depths are provided
-      set x (x - min_lon) / patch_to_meter + min-pxcor         ; transforming the longitude to xcor of netlogo
-      set row remove-item 0 row                                ; remove the first item of 'row', longitude
-      let y item 0 row                                         ; the latitude of the point the tsunami depths are provided
-      set y (y - min_lat) / patch_to_meter + min-pycor         ; transforming the latitude to ycor of netlogo
-      set row remove-item 0 row                                ; remove the first item of 'row', the latitude
-      if x <= (max-pxcor + 0.5) and x >= (min-pxcor - 0.5) and ; if the point is in netlogo's world
-      y <= (max-pycor + 0.5) and y >= (min-pycor - 0.5) [
-        ask patch x y [                                        ; assign the rest of the 'row' which are the water depths to the closest patch
-          set depths row
+  ask patches [set depths []]
+  file-close-all
+  ifelse file-exists? "tsunami_inundation/details.txt" [
+    file-open "tsunami_inundation/details.txt"
+    set tsunami_data_start file-read
+    set tsunami_data_inc file-read
+    set tsunami_data_count file-read
+    file-close
+    let files n-values tsunami_data_count [i -> i * tsunami_data_inc + tsunami_data_start ]
+    set tsunami_max_depth 0
+    set tsunami_min_depth 9999
+    foreach files [? ->
+      ifelse file-exists? (word "tsunami_inundation/" ? ".asc") [
+        let tsunami gis:load-dataset (word "tsunami_inundation/" ? ".asc")
+        gis:apply-raster tsunami depth
+        ask patches [
+          if not ((depth <= 0) or (depth >= 0)) [   ; If NaN
+            set depth 0
+          ]
+          if depth > tsunami_max_depth [set tsunami_max_depth depth]
+          if depth < tsunami_min_depth [set tsunami_min_depth depth]
+          set depths lput depth depths
         ]
       ]
-    ]
-    file-close
-    ask patches with [depths = 0 and not member? 0 [depths] of neighbors][ ; in some rare cases, and due to transforming lat/lon to netlogo xcor and ycor and projections, there are a few patches that are
-      set depths reduce [[?1 ?2] -> (map + ?1 ?2)] [depths] of neighbors   ; missing the water depth information, although provided in the initial data. water depth for these patches are simply interpolated
-      set depths map [ ? -> ? / 8 ] depths                                 ; based on their 8 neighboring patches.
+      [
+        output-print (word "File tsunami_inundation/" ? ".asc is missing!")
+      ]
+      ask patches [set depth 0]
     ]
     output-print "Tsunami Data Loaded"
-  ][                                                          ; if there is no tsunami data provided, write the coordinates of the patches into a file for the user to use and provide the water depth information
-    set file_name "tsunami_inundation/coordinates.csv"
+  ]
+  [
+    ; if the tsunami data is not provided, save coordinate boundaires to "coordinate_boundaries.text"
+    let file_name "tsunami_inundation/boundaries.txt"
     if file-exists? file_name [file-delete file_name]         ; if there already is a file, delete it and make a new one
     file-open file_name
-    ask patches [                                             ; write the coordinates of the patches in the file
-      file-print csv:to-row (list ((pxcor - min-pxcor) * patch_to_meter + min_lon)    ; transforming pxcor to longitude
-                                  ((pycor - min-pycor) * patch_to_meter + min_lat))   ; transforming pycor to latitude
-    ]
+    file-print "top left (lon,lat)"
+    file-print (word min_lon "," (min_lat + (world-height * patch_to_meter)))
+    file-print "bottom right (lon,lat)"
+    file-print (word (min_lon + (world-width * patch_to_meter)) "," min_lat)
     file-close
-    output-print "No Tsunami Data Provided! Coordinates were saved."
+    output-print "Bounrdaries coordinates are saved to tsunami_inundation/boundaries.txt"
   ]
 end
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;; BREAK LINKS ;;;;;;;;;;;;
@@ -581,7 +608,7 @@ to pick-verticals
       set shelter? true
       set shelter_type "Ver"
       set shape "circle"
-      set size 2
+      set size 4
       set color violet
     ]
     display
@@ -612,7 +639,7 @@ to load-population
             set ycor y
             set color brown
             set shape "dot"
-            set size 1
+            set size 2
             set moving? false                                          ; they agents are staionary at the beginning, before they start the evacuation
             set init_dest min-one-of intersections [ distance myself ] ; the first intersection an agent moves toward to
                                                                        ; to get to the transpotation network
@@ -659,6 +686,7 @@ end
 ; before breaking roads and adding vertical shelters
 to load1
   ca
+  print (word "Foot %: " R1_HorEvac_Foot " - Speed ft/s: " Ped_Speed " - Miltime min: " Rtau1)
   ask patches [set pcolor white]
   set ev_times []
   read-gis-files
@@ -690,21 +718,21 @@ end
 ;######################################
 
 to go
-  if ticks >= int(3600 / tick_to_sec) [stop]                ; stop after simulating an hour
-  ; update the tsunami depth every 30 seconds
-  if int(ticks * tick_to_sec) mod 30 = 0 [
-    ask patches with [depths != 0][
-      set depth item int(ticks * tick_to_sec / 30) depths   ; set the depth to the correct item of depths list (depending on the time)
-      if depth > max_depth [                                ; monitor the maximum depth observed at each patch, for future use.
-        set max_depth depth
+  if int(((ticks * tick_to_sec) - tsunami_data_start) / tsunami_data_inc) = tsunami_data_count - 1 [stop]  ; stop after simulation all the flow depths
+  ; update the tsunami depth every interval seconds
+  if int(ticks * tick_to_sec) - tsunami_data_start >= 0 and
+     (int(ticks * tick_to_sec) - tsunami_data_start) mod tsunami_data_inc = 0 [
+    if int(((ticks * tick_to_sec) - tsunami_data_start) / tsunami_data_inc) < tsunami_data_count [
+      ask patches with [depths != 0][
+        set depth item int(((ticks * tick_to_sec) - tsunami_data_start) / tsunami_data_inc) depths   ; set the depth to the correct item of depths list (depending on the time)
+        if depth > max_depth [                                ; monitor the maximum depth observed at each patch, for future use.
+          set max_depth depth
+        ]
       ]
-    ]
-    ; recolor the patches based on the tsunami depth, the deeper the darker the shade of blue
+    ]    ; recolor the patches based on the tsunami depth, the deeper the darker the shade of blue
+    set tsunami_min_depth 0 ; TODO: Find a better scaling scheme - With this line, white maps to 0 m and balck to tsunami_max_depth
     ask patches [
-      let cl 99.9 - depth
-      if cl < 90 [set cl 90]
-      if cl > 99.9 [set cl 99.9]
-      set pcolor cl
+      set pcolor scale-color blue depth tsunami_max_depth tsunami_min_depth
     ]
   ]
 
@@ -729,7 +757,7 @@ to go
   ]
   ; check the residnet that are on the way if they have been caught by the tsunami
   ask residents with [not reached?][
-    if [depth] of patch-here > Hc [mark-dead]
+    if [depth] of patch-here > Hc [ set time_in_water time_in_water + tick_to_sec ]
   ]
   ; ask residets who have reached the network to hatch into a pedestrian or a car depending on their decision
   ask residents with [reached?][
@@ -738,7 +766,7 @@ to go
     if dcsn = 1 or dcsn = 3 [    ; horizontal (1) or vertical (3) evacuation - by FOOT
       ask current_int [          ; ask the current intersection of the resident to hatch a pedestrian
         hatch-pedestrians 1 [
-          set size 1
+          set size 2
           set shape "dot"
           set current_int myself ; myself = current_int of the resident
           set speed spd          ; the speed of the resident is passed on to the pedestrian
@@ -772,7 +800,7 @@ to go
     if dcsn = 2 or dcsn = 4 [   ; horizontal (2) or vertical (4) evacuation - by CAR
       ask current_int [         ; ask the current intersection of the resident to hatch a car
         hatch-cars 1 [
-          set size 1
+          set size 2
           set current_int myself ; myself = current_int of the resident
           set evacuated? false   ; initialized as not evacuated, will be checked immediately after being born
           set dead? false        ; initialized as not dead, will be checked immediately after being born
@@ -807,7 +835,7 @@ to go
   ; check the pedestrians if they have evacuated already or died
   ask pedestrians with [not evacuated? and not dead?][
     if [who] of current_int = shelter or shelter = -99 [mark-evacuated]
-    if [depth] of patch-here >= Hc [mark-dead]
+    if [depth] of patch-here >= Hc [set time_in_water time_in_water + tick_to_sec mark-dead]
   ]
   ; set up the pedestrians that should move
   ask pedestrians with [not moving? and not empty? path and not evacuated? and not dead?][
@@ -825,7 +853,6 @@ to go
       ask road ([who] of current_int) ([who] of next_int)[set crowd crowd - 1] ; decrease the crowd of the road the pedestrian was on
       set current_int next_int                                                 ; update current intersection
       if [who] of current_int = shelter [mark-evacuated]
-      if [depth] of patch-here >= Hc and not evacuated? [mark-dead]
     ]
   ]
 
@@ -836,7 +863,7 @@ to go
   ; check the cars if they have evacuated already or died
   ask cars with [not evacuated? and not dead?][
     if [who] of current_int = shelter or shelter = -99 [mark-evacuated]
-    if [depth] of patch-here >= Hc [mark-dead]
+    if [depth] of patch-here >= Hc [set time_in_water time_in_water + tick_to_sec]
   ]
   ; set up the cars that should move
   ask cars with [not moving? and not empty? path and not evacuated? and not dead?][
@@ -855,20 +882,25 @@ to go
       ask road ([who] of current_int) ([who] of next_int)[set traffic traffic - 1] ; decrease the traffic of the road the pedestrian was on
       set current_int next_int           ; update current intersection
       if [who] of current_int = shelter [mark-evacuated]
-      if [depth] of patch-here >= Hc and not evacuated? [mark-dead]
     ]
   ]
+  ; mark agents who were in the water for a prolonged period of time dead
+  ask residents with [time_in_water > Tc][mark-dead]
+  ask cars with [time_in_water > Tc][mark-dead]
+  ask pedestrians with [time_in_water > Tc][mark-dead]
+  ; update mortality rate
+  set mortality_rate count turtles with [color = red] / (count residents + count pedestrians + count cars) * 100
   tick
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
-230
-10
-980
-761
+228
+11
+940
+724
 -1
 -1
-7.35
+3.5025
 1
 10
 1
@@ -878,10 +910,10 @@ GRAPHICS-WINDOW
 0
 0
 1
--50
-50
--50
-50
+-100
+100
+-100
+100
 1
 1
 1
@@ -889,10 +921,10 @@ ticks
 30.0
 
 PLOT
-995
-346
-1419
-499
+946
+342
+1370
+495
 Percentage of Evacuated
 Min
 %
@@ -909,10 +941,10 @@ PENS
 "Pedestrians" 1.0 0 -14835848 true "" "plotxy (ticks / 60) (count pedestrians with [ color = green ] / (count residents + count pedestrians + count cars) * 100)"
 
 SWITCH
-69
-10
-223
-43
+67
+13
+221
+46
 immediate_evacuation
 immediate_evacuation
 1
@@ -920,10 +952,10 @@ immediate_evacuation
 -1000
 
 BUTTON
-1343
-14
-1422
-47
+1294
+10
+1373
+43
 GO
 go
 T
@@ -937,9 +969,9 @@ NIL
 1
 
 TEXTBOX
-14
+8
 54
-223
+217
 82
 Residents' Decision Making Probabalisties : (Percent)
 11
@@ -947,10 +979,10 @@ Residents' Decision Making Probabalisties : (Percent)
 1
 
 INPUTBOX
-11
-94
-112
-154
+8
+87
+109
+147
 R1_HorEvac_Foot
 25.0
 1
@@ -958,10 +990,10 @@ R1_HorEvac_Foot
 Number
 
 INPUTBOX
-11
-158
-112
-218
+8
+150
+109
+210
 R3_VerEvac_Foot
 25.0
 1
@@ -969,10 +1001,10 @@ R3_VerEvac_Foot
 Number
 
 MONITOR
-1012
-57
-1094
-102
+962
+47
+1044
+92
 Time (min)
 ticks / 60
 1
@@ -980,21 +1012,21 @@ ticks / 60
 11
 
 INPUTBOX
-148
-222
-219
-282
+113
+214
+163
+274
 Hc
-0.5
+1.0
 1
 0
 Number
 
 PLOT
-994
-162
-1419
-336
+945
+158
+1370
+332
 Percentage of Casualties
 Min
 %
@@ -1011,10 +1043,10 @@ PENS
 "Pedestrians" 1.0 0 -955883 true "" "plotxy (ticks / 60) ((count pedestrians with [color = red] + count residents with [color = red]) / (count residents + count pedestrians + count cars) * 100)"
 
 BUTTON
-995
-16
-1071
-49
+946
+12
+1022
+45
 READ (1/2)
 load1\noutput-print \"READ (1/2) DONE!\"\nbeep
 NIL
@@ -1028,20 +1060,20 @@ NIL
 1
 
 TEXTBOX
-27
-227
-143
-245
-Critical Depth: (Meters)
+5
+215
+121
+257
+Critical Depth and Time: (Meters and Seconds)
 11
 0.0
 1
 
 INPUTBOX
-9
-582
-59
-642
+8
+539
+58
+599
 Rtau1
 10.0
 1
@@ -1049,10 +1081,10 @@ Rtau1
 Number
 
 INPUTBOX
-59
-582
-109
-642
+58
+539
+108
+599
 Rsig1
 1.65
 1
@@ -1060,10 +1092,10 @@ Rsig1
 Number
 
 INPUTBOX
-10
-646
-60
-706
+8
+603
+58
+663
 Rtau3
 10.0
 1
@@ -1071,10 +1103,10 @@ Rtau3
 Number
 
 INPUTBOX
-59
-646
-109
-706
+58
+603
+108
+663
 Rsig3
 1.65
 1
@@ -1082,30 +1114,30 @@ Rsig3
 Number
 
 TEXTBOX
-18
-555
-207
-583
+10
+523
+210
+551
 Evacuation Decsion Making Times:
 11
 0.0
 1
 
 TEXTBOX
-22
-285
-71
-313
+18
+274
+67
+302
 On foot: (ft/s)
 11
 0.0
 1
 
 INPUTBOX
-71
-287
-141
-347
+66
+276
+136
+336
 Ped_Speed
 4.0
 1
@@ -1113,10 +1145,10 @@ Ped_Speed
 Number
 
 INPUTBOX
-148
-287
-219
-347
+144
+276
+215
+336
 Ped_Sigma
 0.65
 1
@@ -1124,10 +1156,10 @@ Ped_Sigma
 Number
 
 MONITOR
-1124
-58
-1206
-103
+1074
+48
+1156
+93
 Evacuated
 count turtles with [ color = green ]
 17
@@ -1135,10 +1167,10 @@ count turtles with [ color = green ]
 11
 
 MONITOR
-1215
-58
-1292
-103
+1165
+48
+1242
+93
 Casualty
 count turtles with [ color = red ]
 17
@@ -1146,21 +1178,21 @@ count turtles with [ color = red ]
 11
 
 MONITOR
-1216
-111
-1310
-156
+1166
+101
+1260
+146
 Mortality (%)
-count turtles with [color = red] / (count residents + count pedestrians + count cars) * 100
+mortality_rate
 2
 1
 11
 
 BUTTON
-1272
-14
-1338
-47
+1223
+10
+1289
+43
 Read (2/2)
 load2\noutput-print \"READ (2/2) DONE!\"\nbeep
 NIL
@@ -1174,10 +1206,10 @@ NIL
 1
 
 BUTTON
-1171
-14
-1267
-47
+1122
+10
+1218
+43
 Place Verticals
 pick-verticals
 T
@@ -1191,10 +1223,10 @@ NIL
 1
 
 MONITOR
-1318
-59
-1405
-104
+1268
+49
+1355
+94
 Vertical Cap
 sum [evacuee_count] of intersections with [shelter? and shelter_type = \"Ver\"]
 17
@@ -1202,10 +1234,10 @@ sum [evacuee_count] of intersections with [shelter? and shelter_type = \"Ver\"]
 11
 
 INPUTBOX
-119
-94
-219
-154
+117
+87
+217
+147
 R2_HorEvac_Car
 25.0
 1
@@ -1213,10 +1245,10 @@ R2_HorEvac_Car
 Number
 
 INPUTBOX
-119
-158
-219
-218
+117
+150
+217
+210
 R4_VerEvac_Car
 25.0
 1
@@ -1224,10 +1256,10 @@ R4_VerEvac_Car
 Number
 
 INPUTBOX
-116
-582
-166
-642
+114
+539
+164
+599
 Rtau2
 10.0
 1
@@ -1235,10 +1267,10 @@ Rtau2
 Number
 
 INPUTBOX
-166
-582
-216
-642
+164
+539
+214
+599
 Rsig2
 1.65
 1
@@ -1246,10 +1278,10 @@ Rsig2
 Number
 
 INPUTBOX
-117
-647
-167
-707
+116
+604
+166
+664
 Rtau4
 10.0
 1
@@ -1257,10 +1289,10 @@ Rtau4
 Number
 
 INPUTBOX
-165
-647
-215
-707
+163
+604
+213
+664
 Rsig4
 1.65
 1
@@ -1268,10 +1300,10 @@ Rsig4
 Number
 
 INPUTBOX
-72
-354
-143
-414
+66
+340
+137
+400
 max_speed
 35.0
 1
@@ -1279,20 +1311,20 @@ max_speed
 Number
 
 TEXTBOX
-20
-355
-60
-383
+13
+340
+53
+368
 by car:\n(mph)
 11
 0.0
 1
 
 INPUTBOX
-71
-418
-144
-478
+66
+401
+139
+461
 acceleration
 5.0
 1
@@ -1300,10 +1332,10 @@ acceleration
 Number
 
 INPUTBOX
-147
-418
-222
-478
+143
+401
+218
+461
 deceleration
 25.0
 1
@@ -1311,9 +1343,9 @@ deceleration
 Number
 
 TEXTBOX
-18
-429
-61
+8
+413
+57
 447
 (ft/s^2)
 11
@@ -1321,10 +1353,10 @@ TEXTBOX
 1
 
 INPUTBOX
-71
-484
-144
-544
+66
+462
+139
+522
 alpha
 0.14
 1
@@ -1332,20 +1364,20 @@ alpha
 Number
 
 TEXTBOX
-14
-493
-62
-511
+5
+476
+65
+517
 (mi^2/hr)
 11
 0.0
 1
 
 BUTTON
-1077
-15
-1165
-48
+1028
+11
+1116
+44
 Break Links
 break-links
 T
@@ -1359,10 +1391,10 @@ NIL
 1
 
 BUTTON
-10
-11
-65
-44
+7
+14
+62
+47
 Initialize
 setup-init-val
 NIL
@@ -1376,10 +1408,10 @@ NIL
 1
 
 PLOT
-996
-508
-1419
-762
+947
+504
+1370
+725
 Evacuation Time Histogram
 Minutes (after the earthquake)
 #
@@ -1396,15 +1428,26 @@ PENS
 "Median" 1.0 0 -2674135 true "set-plot-pen-mode 0 ; line mode" "plot-pen-reset\nplot-pen-up\nplotxy median ev_times 0\nplot-pen-down\nplotxy median ev_times plot-y-max"
 
 MONITOR
-1093
-111
-1209
-156
+1043
+101
+1159
+146
 Per Evacuated (%)
 count turtles with [ color = green ] / (count residents + count pedestrians + count cars) * 100
 1
 1
 11
+
+INPUTBOX
+166
+213
+216
+273
+Tc
+120.0
+1
+0
+Number
 
 @#$#@#$#@
 @#$#@#$#@
@@ -1690,7 +1733,7 @@ false
 Polygon -7500403 true true 270 75 225 30 30 225 75 270
 Polygon -7500403 true true 30 75 75 30 270 225 225 270
 @#$#@#$#@
-NetLogo 6.0.4
+NetLogo 6.1.1
 @#$#@#$#@
 @#$#@#$#@
 @#$#@#$#@
